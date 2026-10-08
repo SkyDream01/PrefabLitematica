@@ -1,14 +1,11 @@
 {
-  "type": "minecraft:crafting_shaped",
+  "type": "minecraft:crafting_shapeless",
   "category": "misc",
-  "key": {
-    "B": "minecraft:blue_dye",
-    "P": "minecraft:paper"
-  },
-  "pattern": [
-    "PPP",
-    "PBP",
-    "PPP"
+  "ingredients": [
+    "minecraft:book",
+    "minecraft:lapis_lazuli",
+    "minecraft:redstone",
+    "minecraft:ink_sac"
   ],
   "result": {
     "count": 1,

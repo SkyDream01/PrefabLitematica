@@ -2,14 +2,16 @@
   "type": "minecraft:crafting_shaped",
   "category": "misc",
   "key": {
-    "C": "minecraft:crafting_table",
-    "I": "minecraft:iron_ingot",
-    "P": "#minecraft:planks"
+    "B": "minecraft:book",
+    "I": "minecraft:ink_sac",
+    "L": "minecraft:lapis_block",
+    "O": "minecraft:obsidian",
+    "R": "minecraft:redstone_block"
   },
   "pattern": [
-    "IPI",
-    "PCP",
-    "PPP"
+    " B ",
+    "LIR",
+    " O "
   ],
   "result": {
     "count": 1,

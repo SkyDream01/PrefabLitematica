@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "prefablitematica-test",
+  "version": "${version}",
+  "name": "PrefabLitematica integration tests",
+  "license": "AGPL-3.0-only",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-gametest": ["dev.tensin.prefablitematica.BlueprintGameTests"],
+    "fabric-client-gametest": [
+      "dev.tensin.prefablitematica.PrefabLitematicaClientGameTest",
+      "dev.tensin.prefablitematica.SwampSchematicClientGameTest",
+      "dev.tensin.prefablitematica.MaterialInputClientGameTest",
+      "dev.tensin.prefablitematica.WorkbenchLayoutClientGameTest"
+    ]
+  },
+  "depends": {"prefablitematica": "*"}
+}

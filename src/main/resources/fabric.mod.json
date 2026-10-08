@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "id": "prefablitematica",
+  "version": "${version}",
+  "name": "PrefabLitematica",
+  "description": "Server-authoritative charged building blueprints with optional Litematica import.",
+  "authors": ["Tensin"],
+  "license": "AGPL-3.0-only",
+  "environment": "*",
+  "entrypoints": {
+    "main": ["dev.tensin.prefablitematica.PrefabLitematicaMod"],
+    "client": ["dev.tensin.prefablitematica.client.PrefabLitematicaClient"],
+    "fabric-datagen": ["dev.tensin.prefablitematica.datagen.PrefabLitematicaDataGenerator"]
+  },
+  "mixins": ["prefablitematica.mixins.json"],
+  "depends": {"fabricloader": ">=0.19.5", "minecraft": "~26.3", "java": ">=25", "fabric-api": ">=0.161.0+26.3"},
+  "suggests": {"litematica": ">=0.29.1"}
+}

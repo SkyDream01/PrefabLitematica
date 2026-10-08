@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "down": "minecraft:block/oak_planks",
+    "east": "prefablitematica:block/workbench_side",
+    "north": "prefablitematica:block/workbench_front",
+    "particle": "prefablitematica:block/workbench_side",
+    "south": "prefablitematica:block/workbench_front",
+    "up": "prefablitematica:block/workbench_top",
+    "west": "prefablitematica:block/workbench_side"
+  }
+}

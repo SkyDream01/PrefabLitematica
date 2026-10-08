@@ -1,0 +1,17 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:dark_oak_log",
+    "minecraft:pale_oak_log",
+    "minecraft:oak_log",
+    "minecraft:acacia_log",
+    "minecraft:birch_log",
+    "minecraft:jungle_log",
+    "minecraft:spruce_log",
+    "minecraft:mangrove_log",
+    "minecraft:cherry_log",
+    "minecraft:poplar_log",
+    "minecraft:crimson_stem",
+    "minecraft:warped_stem"
+  ]
+}

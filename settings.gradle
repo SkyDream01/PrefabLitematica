@@ -1,0 +1,15 @@
+import org.apache.tools.ant.DirectoryScanner
+
+pluginManagement {
+    repositories {
+        maven { url = 'https://maven.fabricmc.net/' }
+        maven { url = 'https://maven-central.storage-download.googleapis.com/maven2/' }
+        gradlePluginPortal()
+        mavenCentral()
+    }
+}
+rootProject.name = 'PrefabLitematica'
+
+// Include the project's Git configuration in source archives.
+DirectoryScanner.removeDefaultExclude('**/.gitignore')
+DirectoryScanner.removeDefaultExclude('**/.gitattributes')

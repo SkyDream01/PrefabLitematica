@@ -1,0 +1,21 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:command_block",
+    "minecraft:chain_command_block",
+    "minecraft:repeating_command_block",
+    "minecraft:structure_block",
+    "minecraft:jigsaw",
+    "minecraft:spawner",
+    "minecraft:trial_spawner",
+    "minecraft:vault",
+    "minecraft:bedrock",
+    "minecraft:barrier",
+    "minecraft:light",
+    "minecraft:end_portal",
+    "minecraft:end_gateway",
+    "minecraft:nether_portal",
+    "minecraft:moving_piston",
+    "prefablitematica:workbench"
+  ]
+}

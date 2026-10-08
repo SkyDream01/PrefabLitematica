@@ -1,0 +1,67 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+    id 'maven-publish'
+}
+
+base { archivesName = "prefablitematica-fabric-${minecraft_version}" }
+repositories {
+    maven { url = 'https://api.modrinth.com/maven'; content { includeGroup 'maven.modrinth' } }
+    maven { url = 'https://maven-central.storage-download.googleapis.com/maven2/' }
+    mavenCentral()
+}
+loom {
+    splitEnvironmentSourceSets()
+    mods {
+        prefablitematica {
+            sourceSet sourceSets.main
+            sourceSet sourceSets.client
+        }
+    }
+}
+dependencies {
+    minecraft "com.mojang:minecraft:${minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
+    testImplementation platform('org.junit:junit-bom:5.13.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    if (project.hasProperty('withLitematica')) {
+        clientRuntimeOnly 'maven.modrinth:bEpr0Arc:ZqV316KY'
+        clientRuntimeOnly 'maven.modrinth:GcWjdA9I:JX9bESec'
+    }
+}
+tasks.withType(ProcessResources).configureEach {
+    exclude '.cache/**'
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand version: project.version }
+}
+tasks.withType(JavaCompile).configureEach { options.release = 25; options.encoding = 'UTF-8' }
+java { withSourcesJar(); sourceCompatibility = JavaVersion.VERSION_25; targetCompatibility = JavaVersion.VERSION_25 }
+test { useJUnitPlatform() }
+tasks.withType(Jar).configureEach {
+    exclude '.cache/**'
+    from('LICENSE')
+}
+fabricApi {
+    configureDataGeneration {
+        client = true
+        outputDirectory = file('src/main/generated')
+    }
+    configureTests {
+        createSourceSet = true
+        modId = 'prefablitematica-test'
+        enableGameTests = true
+        enableClientGameTests = true
+        eula = true
+    }
+}
+loom.runs.configureEach { vmArg "-Dprefablitematica.projectDir=${project.projectDir.absolutePath}" }
+tasks.register('sourceDistribution', Zip) {
+    archiveFileName = "${base.archivesName.get()}-${project.version}-source.zip"
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    from(projectDir) {
+        include 'src/**', 'gradle/**', 'docs/**'
+        include 'build.gradle', 'settings.gradle', 'gradle.properties', 'gradlew', 'gradlew.bat', 'README.md', 'CHANGELOG.md', 'LICENSE', '.gitignore', '.gitattributes', '.editorconfig'
+        exclude '**/.cache/**'
+    }
+}

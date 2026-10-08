@@ -1,0 +1,25 @@
+# Gradle and local development output
+.gradle/
+build/
+run/
+.dev/
+logs/
+src/main/generated/.cache/
+
+# IDE and machine-specific configuration
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+out/
+
+# Local secrets and operating system files
+.env
+.env.*
+!.env.example
+Thumbs.db
+.DS_Store
+hs_err_pid*.log
+replay_pid*.log

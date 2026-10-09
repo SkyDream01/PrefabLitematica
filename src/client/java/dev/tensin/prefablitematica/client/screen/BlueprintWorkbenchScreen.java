@@ -68,7 +68,7 @@ public final class BlueprintWorkbenchScreen extends AbstractContainerScreen<Blue
         request(BlueprintNetworking.STATUS, page, new byte[0]);
     }
     private void openCatalog() {
-        if (!BlueprintItem.isBlank(menu.inventory.getItem(0))) { message = Component.translatable("gui.prefablitematica.need_blank").getString(); return; }
+        if (!BlueprintItem.isBlank(menu.inventory.getItem(0)) && !(status.has("requiresReimport") && status.get("requiresReimport").getAsBoolean())) { message = Component.translatable("gui.prefablitematica.need_blank").getString(); return; }
         try {
             sources.clear(); sources.addAll(LitematicaIntegration.memorySources()); catalogPage = 0; catalogOpen = true;
             var directory = LitematicaIntegration.schematicDirectory();
@@ -147,7 +147,8 @@ public final class BlueprintWorkbenchScreen extends AbstractContainerScreen<Blue
                 };
             }
             if (status.has("name")) awaitingImport = false;
-            importButton.active = catalogOpen || (!awaitingImport && capture == null && encoded == null && upload == null && LitematicaIntegration.available() && !status.has("name"));
+            importButton.active = catalogOpen || (!awaitingImport && capture == null && encoded == null && upload == null && LitematicaIntegration.available()
+                    && (!status.has("name") || status.has("requiresReimport") && status.get("requiresReimport").getAsBoolean()));
         }
     }
     @Override public void extractBackground(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {

@@ -11,12 +11,18 @@ public final class BlueprintData {
     public final String name;
     public final int sizeX, sizeY, sizeZ;
     public final List<BlueprintBlock> blocks;
+    public final List<BlueprintScheduledTick> scheduledTicks;
     public final LinkedHashMap<String, MaterialRequirement> requirements;
     public boolean locked;
     public boolean retired;
+    public boolean requiresReimport;
     public BlueprintData(UUID id, String name, int x, int y, int z, List<BlueprintBlock> blocks, LinkedHashMap<String, MaterialRequirement> requirements) {
+        this(id, name, x, y, z, blocks, List.of(), requirements);
+    }
+    public BlueprintData(UUID id, String name, int x, int y, int z, List<BlueprintBlock> blocks, List<BlueprintScheduledTick> scheduledTicks, LinkedHashMap<String, MaterialRequirement> requirements) {
         this.id = id; this.name = name; sizeX = x; sizeY = y; sizeZ = z;
         this.blocks = List.copyOf(blocks); this.requirements = requirements;
+        this.scheduledTicks = List.copyOf(scheduledTicks);
     }
     public boolean fullyCharged() { return requirements.values().stream().allMatch(r -> r.remaining() == 0); }
     /** Stable order within each group keeps the list predictable as materials are supplied. */

@@ -7,7 +7,7 @@
 | 标识 | 值 |
 | --- | --- |
 | 显示名称 / Gradle 项目名 | PrefabLitematica |
-| 版本 | 0.1.0 |
+| 版本 | 0.1.1 |
 | 项目原创代码许可证 | `AGPL-3.0-only` |
 | Fabric Mod ID / 资源与网络命名空间 | `prefablitematica` |
 | Java 包 / Maven group | `dev.tensin.prefablitematica` |
@@ -25,7 +25,7 @@ src/main/java/dev/tensin/prefablitematica/
   blueprint/                   结构模型、序列化、材料分析与进度存储
   material/                    方块计费、流体计费与材料 Tags
   security/                    压缩大小限制与 NBT 清洗
-  placement/                   旋转、权限检查、范围预留和分阶段放置
+  placement/                   旋转、权限检查、范围预留和分 Tick 无更新粘贴
   network/                     分片上传及服务端状态同步
   block/、item/、screen/        工程台、蓝图物品和容器逻辑
   config/                      服务端配置
@@ -55,6 +55,12 @@ docs/                         使用、配置、架构、验证及截图
 # 客户端 GUI 与真实 Litematica 导入回归，需要图形环境
 .\gradlew.bat -PwithLitematica runClientGameTest
 
+# 只验证投影、冲突和确认流程；去掉 withLitematica 可验证内置轮廓
+.\gradlew.bat -PwithLitematica -PprojectionOnly runClientGameTest
+
+# 真实珍珠炮导入、充能、原文件直接粘贴对照及三种路径自动发射
+.\gradlew.bat -PwithLitematica -PpistonOnly runClientGameTest
+
 # 生成配方、Tags、语言、模型和贴图；随后重新构建
 .\gradlew.bat runDatagen
 .\gradlew.bat build
@@ -70,15 +76,15 @@ docs/                         使用、配置、架构、验证及截图
 
 产物：
 
-- `build/libs/prefablitematica-fabric-26.3-0.1.0.jar`
-- `build/libs/prefablitematica-fabric-26.3-0.1.0-sources.jar`
-- `build/distributions/prefablitematica-fabric-26.3-0.1.0-source.zip`
+- `build/libs/prefablitematica-fabric-26.3-0.1.1.jar`
+- `build/libs/prefablitematica-fabric-26.3-0.1.1-sources.jar`
+- `build/distributions/prefablitematica-fabric-26.3-0.1.1-source.zip`
 
 版本只在 `gradle.properties` 的 `version` 更新，主模组和测试模组元数据由资源处理任务展开；Minecraft 版本由 `minecraft_version` 控制产物前缀。
 
 ## 测试资源与提交范围
 
-客户端原理图回归资源位于 `src/gametest/resources/prefablitematica-test/swamp-mob-farm.litematic`，来自用户提供的 `沼泽刷怪塔-hsds.litematic`，原作者为 `white_elephant_`。它仅用于测试，包含在项目源码归档中，不进入发布版 JAR。
+客户端原理图回归资源位于 `src/gametest/resources/prefablitematica-test/`。`swamp-mob-farm.litematic` 来自用户提供的 `沼泽刷怪塔-hsds.litematic`，原作者为 `white_elephant_`；`pearl-headless-pistons.litematic` 来自用户提供的 `pearl_X1012.8_Z1012.8_TNT24-24_BOOST20_v9-zero-axis.litematic`，元数据作者为 `Yisibite`，用于验证两个边界无头伸出活塞的导入。这些文件仅用于测试，包含在项目源码归档中，不进入发布版 JAR。
 
 `.gitignore` 排除 Gradle 缓存、构建输出、运行目录、日志、本地参考资料、IDE 配置及机器私有文件。提交包含 Gradle Wrapper、全部源代码、生成资源、测试和文档。
 

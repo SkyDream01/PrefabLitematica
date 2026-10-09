@@ -10,6 +10,7 @@ import dev.tensin.prefablitematica.config.BlueprintConfig;
 import dev.tensin.prefablitematica.item.*;
 import dev.tensin.prefablitematica.network.BlueprintNetworking;
 import dev.tensin.prefablitematica.placement.BlueprintPlacementManager;
+import dev.tensin.prefablitematica.placement.BlueprintPreviewManager;
 import dev.tensin.prefablitematica.screen.BlueprintWorkbenchScreenHandler;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.*;
@@ -49,9 +50,11 @@ public final class PrefabLitematicaMod implements ModInitializer {
             new MenuType<>(BlueprintWorkbenchScreenHandler::new, FeatureFlags.VANILLA_SET));
     private static BlueprintManager manager;
     private static BlueprintPlacementManager placements;
+    private static BlueprintPreviewManager previews;
     public static BlueprintManager manager(MinecraftServer server) { if (manager == null) manager = new BlueprintManager(server); return manager; }
     public static BlueprintPlacementManager placements(MinecraftServer server) { if (placements == null) placements = new BlueprintPlacementManager(server); return placements; }
     public static BlueprintPlacementManager activePlacements() { return placements; }
+    public static BlueprintPreviewManager previews(MinecraftServer server) { if (previews == null) previews = new BlueprintPreviewManager(server); return previews; }
     @Override public void onInitialize() {
         CONFIG = BlueprintConfig.load();
         Registry.register(BuiltInRegistries.CREATIVE_MODE_TAB, Identifier.parse("prefablitematica:blueprints"), FabricCreativeModeTab.builder()
@@ -63,8 +66,8 @@ public final class PrefabLitematicaMod implements ModInitializer {
         net.fabricmc.fabric.api.event.player.AttackBlockCallback.EVENT.register((player, world, hand, pos, direction) ->
                 placements != null && placements.reserved(world, pos) ? net.minecraft.world.InteractionResult.FAIL : net.minecraft.world.InteractionResult.PASS);
         ServerLifecycleEvents.SERVER_STARTED.register(server -> { manager = new BlueprintManager(server); placements = new BlueprintPlacementManager(server); });
-        ServerTickEvents.END_SERVER_TICK.register(server -> { placements(server).tick(); BlueprintNetworking.tick(server); });
-        ServerLifecycleEvents.SERVER_STOPPING.register(server -> { BlueprintNetworking.stop(); if (placements != null) placements.stop(); });
-        ServerLifecycleEvents.SERVER_STOPPED.register(server -> { manager = null; placements = null; });
+        ServerTickEvents.END_SERVER_TICK.register(server -> { placements(server).tick(); BlueprintNetworking.tick(server); previews(server).tick(); });
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> { BlueprintNetworking.stop(); if (placements != null) placements.stop(); if (previews != null) previews.stop(); });
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> { manager = null; placements = null; previews = null; });
     }
 }

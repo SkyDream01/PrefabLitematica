@@ -60,6 +60,18 @@ public final class BlueprintManager {
         atomicWrite(directory.resolve(data.id + ".bprint"), encoded);
         saveProgress(data); evict(); cache.put(data.id, data);
     }
+    /** Refresh missing runtime metadata only; a paid blueprint cannot be exchanged for another structure. */
+    public static void refreshLegacy(BlueprintData old, BlueprintData replacement) {
+        if (!old.requiresReimport || replacement.requiresReimport || old.locked || old.retired || !old.id.equals(replacement.id)
+                || old.sizeX != replacement.sizeX || old.sizeY != replacement.sizeY || old.sizeZ != replacement.sizeZ)
+            throw new IllegalArgumentException("Legacy refresh requires the same building and blueprint");
+        var before = new HashMap<BlockPos, BlockState>(); old.blocks.forEach(b -> before.put(b.relativePos(), b.state()));
+        var after = new HashMap<BlockPos, BlockState>(); replacement.blocks.forEach(b -> after.put(b.relativePos(), b.state()));
+        if (!before.equals(after) || !old.requirements.keySet().equals(replacement.requirements.keySet())
+                || replacement.requirements.values().stream().anyMatch(r -> old.requirements.get(r.key).required != r.required))
+            throw new IllegalArgumentException("Reimport the exact original building to preserve its charge");
+        replacement.requirements.values().forEach(r -> r.supplied = old.requirements.get(r.key).supplied);
+    }
     public void saveProgress(BlueprintData data) throws IOException {
         JsonObject object = new JsonObject(); object.addProperty("version", 1); object.addProperty("locked", data.locked); object.addProperty("retired", data.retired);
         JsonArray rows = new JsonArray();

@@ -84,6 +84,64 @@ class BlueprintCoreTest {
         var nbt=TagParser.parseCompoundFully("{Items:[{id:'minecraft:diamond',count:64}],LootTable:'minecraft:chests/end_city_treasure',LootTableSeed:1L,components:{'minecraft:container':[{id:'minecraft:diamond'}]}}");
         assertTrue(BlueprintNbtSanitizer.sanitize(nbt,Blocks.CHEST.defaultBlockState(),16384).isEmpty());
     }
+    @Test void comparatorRuntimeOutputIsPreservedAndBounded() throws Exception {
+        var raw = TagParser.parseCompoundFully("{id:'minecraft:comparator',OutputSignal:1,Items:[{id:'minecraft:diamond',count:64}],components:{}}");
+        var clean = BlueprintNbtSanitizer.prepareForExport(raw, Blocks.COMPARATOR.defaultBlockState());
+        assertEquals(1, clean.getIntOr("OutputSignal", -1)); assertEquals(Set.of("OutputSignal"), clean.keySet());
+        assertEquals(clean, BlueprintNbtSanitizer.sanitize(clean, Blocks.COMPARATOR.defaultBlockState(), 16384));
+        for (String value : List.of("-1", "16", "'not a number'"))
+            assertThrows(IllegalArgumentException.class, () -> BlueprintNbtSanitizer.sanitize(TagParser.parseCompoundFully("{OutputSignal:" + value + "}"), Blocks.COMPARATOR.defaultBlockState(), 16384));
+    }
+    @Test void scheduledTicksRoundtripPreservesTypesTimingPriorityAndOrder() throws Exception {
+        var blocks = List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.OBSERVER.defaultBlockState(), null),
+                new BlueprintBlock(BlockPos.ZERO.east(), Blocks.WATER.defaultBlockState(), null));
+        var ticks = List.of(new BlueprintScheduledTick(BlockPos.ZERO, false, net.minecraft.resources.Identifier.parse("minecraft:observer"), 2, -3, 41),
+                new BlueprintScheduledTick(BlockPos.ZERO.east(), true, net.minecraft.resources.Identifier.parse("minecraft:water"), 7, 2, 42));
+        var source = new BlueprintData(UUID.randomUUID(), "Ticks", 2, 1, 1, blocks, ticks, new LinkedHashMap<>());
+        var decoded = BlueprintSerializer.decode(BlueprintSerializer.encode(source), source.id, new BlueprintConfig());
+        assertEquals(ticks, decoded.scheduledTicks);
+        for (var invalid : List.of(new BlueprintScheduledTick(BlockPos.ZERO, false, net.minecraft.resources.Identifier.parse("minecraft:tnt"), 0, 0, 0),
+                new BlueprintScheduledTick(BlockPos.ZERO.above(), false, ticks.getFirst().type(), 0, 0, 0),
+                new BlueprintScheduledTick(BlockPos.ZERO, false, ticks.getFirst().type(), 0, 4, 0))) {
+            var bad = new BlueprintData(source.id, source.name, 2, 1, 1, blocks, List.of(invalid), new LinkedHashMap<>());
+            assertThrows(IOException.class, () -> BlueprintSerializer.decode(BlueprintSerializer.encode(bad), bad.id, new BlueprintConfig()));
+        }
+    }
+    @Test void legacyBlueprintFormatWithoutTicksStillLoads() throws Exception {
+        var bytes = new ByteArrayOutputStream();
+        try (var out = new DataOutputStream(new GZIPOutputStream(bytes))) {
+            out.writeInt(BlueprintSerializer.MAGIC); BlueprintSerializer.writeString(out, "Legacy");
+            out.writeInt(1); out.writeInt(1); out.writeInt(1); out.writeInt(1);
+            BlueprintSerializer.writeString(out, "minecraft:stone"); out.writeInt(0); out.writeInt(1);
+            out.writeInt(0); out.writeInt(0); out.writeInt(0); out.writeInt(0);
+            BlueprintSerializer.writeString(out, "minecraft:empty"); BlueprintSerializer.writeString(out, "");
+        }
+        var legacy = BlueprintSerializer.decode(bytes.toByteArray(), UUID.randomUUID(), new BlueprintConfig());
+        assertEquals(Blocks.STONE.defaultBlockState(), legacy.blocks.getFirst().state()); assertTrue(legacy.scheduledTicks.isEmpty());
+    }
+    @Test void legacyComparatorRefreshPreservesChargeAndCannotExchangeTheBuilding() throws Exception {
+        var state = Blocks.COMPARATOR.defaultBlockState().setValue(BlockStateProperties.POWERED, true);
+        var source = data(List.of(new BlueprintBlock(BlockPos.ZERO, state, new CompoundTag())), 1, 1, 1);
+        byte[] expanded = BoundedStreams.expand(BlueprintSerializer.encode(source), 33554432, 100663296);
+        java.nio.ByteBuffer.wrap(expanded).putInt(BlueprintSerializer.MAGIC);
+        var legacyBytes = new ByteArrayOutputStream();
+        try (var gzip = new GZIPOutputStream(legacyBytes)) { gzip.write(expanded, 0, expanded.length - 4); }
+        var old = BlueprintSerializer.decode(legacyBytes.toByteArray(), source.id, new BlueprintConfig());
+        assertTrue(old.requiresReimport);
+        old.requirements.put("comparator", new MaterialRequirement("comparator", "minecraft:comparator", "exact", 1)); old.fill();
+        var nbt = new CompoundTag(); nbt.putInt("OutputSignal", 1);
+        var replacement = new BlueprintData(old.id, old.name, 1, 1, 1, List.of(new BlueprintBlock(BlockPos.ZERO, state, nbt)), new LinkedHashMap<>());
+        replacement.requirements.put("comparator", new MaterialRequirement("comparator", "minecraft:comparator", "exact", 1));
+        BlueprintManager.refreshLegacy(old, replacement);
+        assertTrue(replacement.fullyCharged()); assertFalse(replacement.requiresReimport); assertEquals(old.id, replacement.id);
+        var other = new BlueprintData(old.id, old.name, 1, 1, 1, List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.STONE.defaultBlockState(), null)), replacement.requirements);
+        assertThrows(IllegalArgumentException.class, () -> BlueprintManager.refreshLegacy(old, other));
+        replacement.requiresReimport = true;
+        assertThrows(IllegalArgumentException.class, () -> BlueprintManager.refreshLegacy(old, replacement));
+        replacement.requiresReimport = false;
+        replacement.requirements.get("comparator").required = 2;
+        assertThrows(IllegalArgumentException.class, () -> BlueprintManager.refreshLegacy(old, replacement));
+    }
     @Test void cosmeticSignSurvivesButCommandsDoNot() throws Exception {
         var nbt=TagParser.parseCompoundFully("{front_text:{messages:[{text:'Hello',click_event:{action:'run_command',command:'/op test'}}]},Items:[]}");
         String clean=BlueprintNbtSanitizer.sanitize(nbt,Blocks.OAK_SIGN.defaultBlockState(),16384).toString();

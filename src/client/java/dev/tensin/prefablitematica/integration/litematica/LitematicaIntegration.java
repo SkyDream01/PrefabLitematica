@@ -9,6 +9,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.ticks.ScheduledTick;
 import dev.tensin.prefablitematica.security.BlueprintNbtSanitizer;
 import java.lang.reflect.Method;
 import java.nio.file.*;
@@ -61,12 +62,14 @@ public final class LitematicaIntegration {
         return new Source((String) call(selected, "getName"), "", SourceKind.PLACEMENT, selected, null, null);
     }
     public static final class Capture {
-        private record Region(Object container, Method get, Map<BlockPos, ?> nbt, int x, int y, int z, BlockPos minimum,
+        private record Region(Object container, Method get, Map<BlockPos, ?> nbt, Map<BlockPos, ScheduledTick<Block>> blockTicks,
+                              Map<BlockPos, ScheduledTick<net.minecraft.world.level.material.Fluid>> fluidTicks, int x, int y, int z, BlockPos minimum,
                               BlockPos offset, Mirror mainMirror, Mirror subMirror, Rotation mainRotation, Rotation subRotation, Rotation combined, Mirror stateSubMirror) {
             BlockPos transform(BlockPos local) { return transformPos(transformPos(local, mainMirror, mainRotation), subMirror, subRotation).offset(offset); }
         }
         private final List<Region> regions = new ArrayList<>();
         private final LinkedHashMap<BlockPos, BlueprintBlock> blocks = new LinkedHashMap<>();
+        private final LinkedHashMap<String, BlueprintScheduledTick> ticks = new LinkedHashMap<>();
         private final String name;
         private final BlockPos minimum;
         private final int sizeX, sizeY, sizeZ;
@@ -104,12 +107,15 @@ public final class LitematicaIntegration {
                 scanned += (long) x * y * z; if (x == 0 || y == 0 || z == 0 || scanned > 500000) throw new IllegalArgumentException("Projection exceeds 500000 scanned cells");
                 Object container = named(schematic, "getSubRegionContainer", regionName); if (container == null) throw new IllegalArgumentException("Missing schematic region container");
                 Map<BlockPos, ?> nbt = (Map<BlockPos, ?>) named(schematic, "getBlockEntityMapForRegion", regionName);
+                var blockTicks = (Map<BlockPos, ScheduledTick<Block>>) named(schematic, "getScheduledBlockTicksForRegion", regionName);
+                var fluidTicks = (Map<BlockPos, ScheduledTick<net.minecraft.world.level.material.Fluid>>) named(schematic, "getScheduledFluidTicksForRegion", regionName);
                 Mirror subMirror = (Mirror) call(sub, "getMirror"); Rotation subRotation = (Rotation) call(sub, "getRotation");
                 Mirror stateSub = subMirror;
                 if (mainRotation == Rotation.CLOCKWISE_90 || mainRotation == Rotation.COUNTERCLOCKWISE_90)
                     stateSub = subMirror == Mirror.FRONT_BACK ? Mirror.LEFT_RIGHT : subMirror == Mirror.LEFT_RIGHT ? Mirror.FRONT_BACK : Mirror.NONE;
                 BlockPos localMin = new BlockPos(signed.getX() < 0 ? 1 - x : 0, signed.getY() < 0 ? 1 - y : 0, signed.getZ() < 0 ? 1 - z : 0);
                 Region region = new Region(container, container.getClass().getMethod("get", int.class, int.class, int.class), nbt == null ? Map.of() : nbt,
+                        blockTicks == null ? Map.of() : blockTicks, fluidTicks == null ? Map.of() : fluidTicks,
                         x, y, z, localMin, transformPos(position, mainMirror, mainRotation), mainMirror, subMirror, mainRotation, subRotation, mainRotation.getRotated(subRotation), stateSub);
                 regions.add(region);
                 for (int cx : new int[]{0, x - 1}) for (int cy : new int[]{0, y - 1}) for (int cz : new int[]{0, z - 1}) {
@@ -134,6 +140,11 @@ public final class LitematicaIntegration {
                     BlueprintBlock block = new BlueprintBlock(pos, state, nbt);
                     BlueprintBlock previous = blocks.putIfAbsent(pos, block);
                     if (previous != null && !previous.equals(block)) throw new IllegalArgumentException("Conflicting overlapping subregions");
+                    var local = new BlockPos(x, y, z); var blockTick = r.blockTicks.get(local); var fluidTick = r.fluidTicks.get(local);
+                    if (blockTick != null && blockTick.type() == state.getBlock()) addTick(new BlueprintScheduledTick(pos, false,
+                            net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(blockTick.type()), blockTick.triggerTick(), blockTick.priority().getValue(), blockTick.subTickOrder()));
+                    if (fluidTick != null && fluidTick.type() == state.getFluidState().getType()) addTick(new BlueprintScheduledTick(pos, true,
+                            net.minecraft.core.registries.BuiltInRegistries.FLUID.getKey(fluidTick.type()), fluidTick.triggerTick(), fluidTick.priority().getValue(), fluidTick.subTickOrder()));
                 }
                 if (++index >= r.x * r.y * r.z) { regionIndex++; index = 0; }
             }
@@ -141,7 +152,11 @@ public final class LitematicaIntegration {
         }
         public BlueprintData finish() {
             if (blocks.isEmpty()) throw new IllegalArgumentException("Projection is empty");
-            return new BlueprintData(UUID.randomUUID(), name, sizeX, sizeY, sizeZ, new ArrayList<>(blocks.values()), new LinkedHashMap<>());
+            return new BlueprintData(UUID.randomUUID(), name, sizeX, sizeY, sizeZ, new ArrayList<>(blocks.values()), new ArrayList<>(ticks.values()), new LinkedHashMap<>());
+        }
+        private void addTick(BlueprintScheduledTick tick) {
+            var previous = ticks.putIfAbsent(tick.fluid() + ":" + tick.position().toShortString(), tick);
+            if (previous != null && !previous.equals(tick)) throw new IllegalArgumentException("Conflicting scheduled ticks in overlapping subregions");
         }
     }
     public static BlockPos transformPos(BlockPos pos, Mirror mirror, Rotation rotation) {

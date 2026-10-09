@@ -15,15 +15,21 @@ public final class PlacementValidator {
             listeners -> (player, pos) -> { for (Permission listener : listeners) if (!listener.allow(player, pos)) return false; return true; });
     private PlacementValidator() {}
     public static void validate(ServerPlayer player, BlockPos pos) {
+        String problem = problem(player, pos);
+        if (problem != null) throw new IllegalArgumentException(problem);
+    }
+    /** Read-only check shared by the projection and final placement preflight. */
+    public static String problem(ServerPlayer player, BlockPos pos) {
         var world = player.level();
-        if (!player.mayBuild() || player.isSpectator()) throw new IllegalArgumentException("Building is not permitted");
+        if (!player.mayBuild() || player.isSpectator()) return "Building is not permitted";
         if (pos.getY() < world.getMinY() || pos.getY() > world.getMaxY() || !world.getWorldBorder().isWithinBounds(pos))
-            throw new IllegalArgumentException("Outside world bounds: " + pos.toShortString());
-        if (!world.hasChunkAt(pos)) throw new IllegalArgumentException("Load the entire building area first");
-        if (!world.mayInteract(player, pos) || !ALLOW.invoker().allow(player, pos)) throw new IllegalArgumentException("Protected position: " + pos.toShortString());
+            return "Outside world bounds: " + pos.toShortString();
+        if (!world.hasChunkAt(pos)) return "Load the entire building area first";
+        if (!world.mayInteract(player, pos) || !ALLOW.invoker().allow(player, pos)) return "Protected position: " + pos.toShortString();
         var existing = world.getBlockState(pos);
         if (PrefabLitematicaMod.CONFIG.placementMode.equals("SAFE") && !existing.isAir() && !existing.canBeReplaced())
-            throw new IllegalArgumentException("Occupied position: " + pos.toShortString());
-        if (existing.getDestroySpeed(world, pos) < 0 && !existing.isAir()) throw new IllegalArgumentException("Unbreakable position: " + pos.toShortString());
+            return "Occupied position: " + pos.toShortString();
+        if (existing.getDestroySpeed(world, pos) < 0 && !existing.isAir()) return "Unbreakable position: " + pos.toShortString();
+        return null;
     }
 }

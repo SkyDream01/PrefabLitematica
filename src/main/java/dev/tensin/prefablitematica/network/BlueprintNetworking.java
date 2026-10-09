@@ -28,14 +28,19 @@ public final class BlueprintNetworking {
     private static final class Upload {
         final UUID transfer;
         final int sync, total;
+        final UUID original;
         final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         int sequence;
         long touched = System.currentTimeMillis();
-        Upload(BlueprintPayload packet, int total) { transfer = packet.transferId(); sync = packet.syncId(); this.total = total; }
+        Upload(BlueprintPayload packet, int total, UUID original) { transfer = packet.transferId(); sync = packet.syncId(); this.total = total; this.original = original; }
     }
-    private record ImportJob(ServerPlayer player, int syncId, BlueprintManager.Analysis analysis) {}
+    private record ImportJob(ServerPlayer player, int syncId, BlueprintManager.Analysis analysis, boolean refresh) {}
     private BlueprintNetworking() {}
     public static void register() {
+        PayloadTypeRegistry.serverboundPlay().register(BlueprintPreviewPayload.Request.TYPE, BlueprintPreviewPayload.Request.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(BlueprintPreviewPayload.Response.TYPE, BlueprintPreviewPayload.Response.CODEC);
+        ServerPlayNetworking.registerGlobalReceiver(BlueprintPreviewPayload.Request.TYPE, (packet, context) -> PrefabLitematicaMod.previews(context.server()).handle(context.player(), packet));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> PrefabLitematicaMod.previews(server).disconnect(handler.player));
         PayloadTypeRegistry.serverboundPlay().register(BlueprintPayload.C2S, BlueprintPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay().register(BlueprintPayload.Response.TYPE, BlueprintPayload.Response.CODEC);
         ServerPlayNetworking.registerGlobalReceiver(BlueprintPayload.C2S, (packet, context) -> handle(context.player(), packet));
@@ -60,11 +65,12 @@ public final class BlueprintNetworking {
                     rateLimit(player, 3000);
                     if (!PrefabLitematicaMod.CONFIG.allowSurvivalImports && !player.isCreative()) throw new IllegalArgumentException("Only creative imports are enabled");
                     if (uploads.size() + jobs.size() >= 2 || uploads.containsKey(player.getUUID())) throw new IllegalArgumentException("Import server is busy");
-                    if (!BlueprintItem.isBlank(menu.bench.getItem(0))) throw new IllegalArgumentException("Insert an unused blueprint first");
+                    var old = menu.bench.blueprint();
+                    if (!BlueprintItem.isBlank(menu.bench.getItem(0)) && (old == null || !old.requiresReimport || old.locked)) throw new IllegalArgumentException("Insert an unused blueprint first");
                     if (packet.data().length != 4) throw new IllegalArgumentException("Invalid upload header");
                     int total = java.nio.ByteBuffer.wrap(packet.data()).getInt();
                     if (total < 1 || total > PrefabLitematicaMod.CONFIG.maxUploadBytes) throw new IllegalArgumentException("Upload exceeds size limit");
-                    uploads.put(player.getUUID(), new Upload(packet, total)); ack(player, packet, 0);
+                    uploads.put(player.getUUID(), new Upload(packet, total, old != null && old.requiresReimport ? old.id : null)); ack(player, packet, 0);
                 }
                 case CHUNK -> {
                     Upload upload = uploads.get(player.getUUID());
@@ -81,13 +87,14 @@ public final class BlueprintNetworking {
                     if (decoder == null || decoder.isShutdown()) decoder = Executors.newSingleThreadExecutor(Thread.ofPlatform().daemon().name("blueprint-decoder").factory());
                     // One bounded worker decodes structure; world and inventories remain on the server thread.
                     byte[] bytes = upload.bytes.toByteArray(); MinecraftServer server = player.level().getServer();
-                    jobs.add(new ImportJob(player, packet.syncId(), null));
+                    jobs.add(new ImportJob(player, packet.syncId(), null, false));
                     decoder.submit(() -> {
                         try {
-                            BlueprintData data = BlueprintSerializer.decode(bytes, UUID.randomUUID(), PrefabLitematicaMod.CONFIG);
+                            BlueprintData data = BlueprintSerializer.decode(bytes, upload.original == null ? UUID.randomUUID() : upload.original, PrefabLitematicaMod.CONFIG);
+                            if (data.requiresReimport) throw new IOException("Update the client and reimport the original schematic to restore missing comparator data");
                             server.execute(() -> {
                                 jobs.removeIf(job -> job.player == player && job.analysis == null);
-                                try { menu(player, packet.syncId()); jobs.add(new ImportJob(player, packet.syncId(), PrefabLitematicaMod.manager(server).new Analysis(data))); sendStatus(player, menu, "Validating materials…"); }
+                                try { menu(player, packet.syncId()); jobs.add(new ImportJob(player, packet.syncId(), PrefabLitematicaMod.manager(server).new Analysis(data), upload.original != null)); sendStatus(player, menu, "Validating materials…"); }
                                 catch (Exception e) { error(player, packet.syncId(), e.getMessage()); }
                             });
                         } catch (Exception e) { server.execute(() -> { jobs.removeIf(job -> job.player == player && job.analysis == null); error(player, packet.syncId(), e.getMessage()); }); }
@@ -115,8 +122,11 @@ public final class BlueprintNetworking {
             ImportJob job = iterator.next(); if (job.analysis == null) continue;
             try {
                 var menu = menu(job.player, job.syncId);
-                if (!BlueprintItem.isBlank(menu.bench.getItem(0))) throw new IllegalArgumentException("Blueprint slot changed during import");
+                var old = menu.bench.blueprint();
+                if (job.refresh ? old == null || !old.requiresReimport || old.locked || !old.id.equals(job.analysis.data.id)
+                        : !BlueprintItem.isBlank(menu.bench.getItem(0))) throw new IllegalArgumentException("Blueprint slot changed during import");
                 if (job.analysis.tick(PrefabLitematicaMod.CONFIG.blocksPlacedPerTick)) {
+                    if (job.refresh) BlueprintManager.refreshLegacy(old, job.analysis.data);
                     PrefabLitematicaMod.manager(server).create(job.analysis.data); menu.bench.setItem(0, BlueprintItem.loaded(job.analysis.data));
                     sendStatus(job.player, menu, "Imported"); iterator.remove();
                 }
@@ -130,7 +140,7 @@ public final class BlueprintNetworking {
         BlueprintData data = menu.bench.blueprint();
         if (data != null) {
             result.addProperty("name", data.name); result.addProperty("size", data.sizeX + " × " + data.sizeY + " × " + data.sizeZ);
-            result.addProperty("blocks", data.blocks.size()); result.addProperty("charge", data.charge()); result.addProperty("locked", data.locked);
+            result.addProperty("blocks", data.blocks.size()); result.addProperty("charge", data.charge()); result.addProperty("locked", data.locked); result.addProperty("requiresReimport", data.requiresReimport);
             var rows = data.requirementsForInput();
             int pages = Math.max(1, (rows.size() + PAGE_SIZE - 1) / PAGE_SIZE); menu.page = Math.min(menu.page, pages - 1);
             result.addProperty("page", menu.page); result.addProperty("pages", pages); JsonArray materials = new JsonArray();

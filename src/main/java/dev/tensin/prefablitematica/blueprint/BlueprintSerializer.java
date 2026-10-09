@@ -21,12 +21,13 @@ import java.util.zip.GZIPOutputStream;
 /** Wire and disk format contains structure only: no UUID, charge, material group or entities from clients. */
 public final class BlueprintSerializer {
     public static final int MAGIC = 0x42505231;
+    private static final int MAGIC_WITH_TICKS = 0x42505232;
     public static final TagKey<Block> FORBIDDEN_BLOCKS = TagKey.create(Registries.BLOCK, Identifier.parse("prefablitematica:forbidden_blocks"));
     private BlueprintSerializer() {}
     public static byte[] encode(BlueprintData data) throws IOException {
         var bytes = new ByteArrayOutputStream();
         try (var out = new DataOutputStream(new GZIPOutputStream(bytes))) {
-            out.writeInt(MAGIC); writeString(out, data.name);
+            out.writeInt(MAGIC_WITH_TICKS); writeString(out, data.name);
             out.writeInt(data.sizeX); out.writeInt(data.sizeY); out.writeInt(data.sizeZ);
             var palette = new LinkedHashMap<BlockState, Integer>();
             data.blocks.forEach(b -> palette.computeIfAbsent(b.state(), ignored -> palette.size()));
@@ -43,6 +44,12 @@ public final class BlueprintSerializer {
                 writeString(out, BuiltInRegistries.FLUID.getKey(b.fluid().getType()).toString());
                 writeString(out, b.blockEntity() == null ? "" : b.blockEntity().toString());
             }
+            out.writeInt(data.scheduledTicks.size());
+            for (var tick : data.scheduledTicks) {
+                out.writeInt(tick.position().getX()); out.writeInt(tick.position().getY()); out.writeInt(tick.position().getZ());
+                out.writeBoolean(tick.fluid()); writeString(out, tick.type().toString());
+                out.writeLong(tick.trigger()); out.writeInt(tick.priority()); out.writeLong(tick.order());
+            }
         }
         return bytes.toByteArray();
     }
@@ -50,7 +57,7 @@ public final class BlueprintSerializer {
     public static BlueprintData decode(byte[] bytes, UUID id, BlueprintConfig config) throws IOException {
         byte[] expanded = BoundedStreams.expand(bytes, config.maxUploadBytes, config.maxExpandedBytes);
         try (var in = new DataInputStream(new ByteArrayInputStream(expanded))) {
-            require(in.readInt() == MAGIC, "Unsupported blueprint format");
+            int format = in.readInt(); require(format == MAGIC || format == MAGIC_WITH_TICKS, "Unsupported blueprint format");
             String name = readString(in, 256).strip(); require(!name.isEmpty() && name.length() <= 80 && name.chars().noneMatch(c -> c < 32 || c == 127), "Invalid name");
             int x = in.readInt(), y = in.readInt(), z = in.readInt();
             require(x > 0 && y > 0 && z > 0 && x <= config.maxDimension && y <= config.maxDimension && z <= config.maxDimension, "Invalid dimensions");
@@ -88,8 +95,27 @@ public final class BlueprintSerializer {
                 }
                 blocks.add(new BlueprintBlock(pos, state, nbt));
             }
+            var ticks = new ArrayList<BlueprintScheduledTick>();
+            if (format == MAGIC_WITH_TICKS) {
+                int tickCount = in.readInt(); require(tickCount >= 0 && tickCount <= count * 2L, "Invalid scheduled tick count");
+                var states = new HashMap<BlockPos, BlockState>(); if (tickCount > 0) blocks.forEach(b -> states.put(b.relativePos(), b.state()));
+                var tickPositions = new HashSet<String>();
+                for (int i = 0; i < tickCount; i++) {
+                    var pos = new BlockPos(in.readInt(), in.readInt(), in.readInt()); boolean fluidTick = in.readBoolean();
+                    var type = Identifier.tryParse(readString(in, 256)); long trigger = in.readLong(); int priority = in.readInt(); long order = in.readLong();
+                    BlockState state = states.get(pos);
+                    require(type != null && state != null && priority >= -3 && priority <= 3 && trigger >= Integer.MIN_VALUE && trigger <= Integer.MAX_VALUE, "Invalid scheduled tick");
+                    require(tickPositions.add(fluidTick + ":" + pos.toShortString()), "Duplicate scheduled tick");
+                    require(fluidTick ? !state.getFluidState().isEmpty() && type.equals(BuiltInRegistries.FLUID.getKey(state.getFluidState().getType()))
+                            : type.equals(BuiltInRegistries.BLOCK.getKey(state.getBlock())), "Scheduled tick contradicts block state");
+                    ticks.add(new BlueprintScheduledTick(pos, fluidTick, type, trigger, priority, order));
+                }
+            }
             require(in.available() == 0, "Trailing structure data");
-            return new BlueprintData(id, name, x, y, z, blocks, new LinkedHashMap<>());
+            var data = new BlueprintData(id, name, x, y, z, blocks, ticks, new LinkedHashMap<>());
+            data.requiresReimport = format == MAGIC && blocks.stream().anyMatch(b -> b.state().is(Blocks.COMPARATOR)
+                    && (b.blockEntity() == null || !b.blockEntity().contains("OutputSignal")));
+            return data;
         } catch (Exception e) { if (e instanceof IOException io) throw io; throw new IOException("Invalid prefablitematica: " + e.getMessage(), e); }
     }
     private static <T extends Comparable<T>> BlockState withProperty(BlockState state, Property<T> property, String value) throws IOException {

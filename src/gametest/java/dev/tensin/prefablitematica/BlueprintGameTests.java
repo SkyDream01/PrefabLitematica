@@ -11,13 +11,18 @@ import dev.tensin.prefablitematica.blueprint.*;
 import dev.tensin.prefablitematica.block.entity.BlueprintWorkbenchBlockEntity;
 import dev.tensin.prefablitematica.item.BlueprintItem;
 import dev.tensin.prefablitematica.placement.BlueprintRotation;
+import dev.tensin.prefablitematica.placement.BlueprintPreviewScan;
+import dev.tensin.prefablitematica.network.BlueprintPreviewPayload;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.component.ItemContainerContents;
 import dev.tensin.prefablitematica.screen.BlueprintWorkbenchScreenHandler;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import java.util.*;
 
 public final class BlueprintGameTests {
@@ -195,6 +200,42 @@ public final class BlueprintGameTests {
         }
         helper.succeed();
     }
+    @GameTest public void headlessExtendedPistonsKeepTheirStateThroughChargingRotationAndPlacement(GameTestHelper helper) throws Exception {
+        var player = helper.makeMockServerPlayerInLevel(); var bench = workbench(helper);
+        var placed = new LinkedHashMap<BlockPos, BlockState>();
+        for (var block : List.of(Blocks.PISTON, Blocks.STICKY_PISTON)) for (var rotation : BlueprintRotation.values()) {
+            var state = block.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.EAST).setValue(BlockStateProperties.EXTENDED, true);
+            var data = create(helper, List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.REDSTONE_BLOCK.defaultBlockState(), null),
+                    new BlueprintBlock(BlockPos.ZERO.east(), state, null)), 2, 1, 1);
+            helper.assertTrue(data.requirements.get("item:minecraft:" + (block == Blocks.PISTON ? "piston" : "sticky_piston")).required == 1,
+                    "A headless extended base must charge exactly one piston item");
+            bench.clearContent(); var stack = BlueprintItem.loaded(data); bench.setItem(0, stack);
+            bench.setItem(1, new ItemStack(Items.REDSTONE_BLOCK)); bench.setItem(2, new ItemStack(block.asItem())); bench.charge(player);
+            helper.assertTrue(data.fullyCharged() && bench.getItem(1).isEmpty() && bench.getItem(2).isEmpty(), "Real materials must fully charge the headless piston");
+            var origin = helper.absolutePos(new BlockPos(3 + rotation.ordinal() * 4, block == Blocks.PISTON ? 3 : 6, 3));
+            var expected = state.rotate(rotation.vanilla);
+            var pistonPos = origin.offset(rotation.apply(BlockPos.ZERO.east(), 2, 1));
+            var headPos = pistonPos.relative(expected.getValue(BlockStateProperties.FACING));
+            for (var pos : List.of(origin, origin.offset(rotation.apply(BlockPos.ZERO, 2, 1)), pistonPos, headPos))
+                helper.getLevel().setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+            var manager = PrefabLitematicaMod.placements(helper.getLevel().getServer()); manager.start(player, stack, origin, rotation); manager.tick();
+            helper.assertTrue(helper.getLevel().getBlockState(pistonPos) == expected, "Placement must preserve the rotated extended base");
+            helper.assertTrue(helper.getLevel().getBlockState(headPos).isAir(), "Placement must not synthesize a head outside the blueprint");
+            helper.assertTrue(!data.fullyCharged() && !data.locked, "Successful placement must debit charge and release the reservation");
+            var restored = new BlueprintManager(helper.getLevel().getServer()).get(data.id);
+            helper.assertTrue(restored != null && restored.blocks.get(1).state() == state && restored.charge() == 0,
+                    "Stored structure must retain the original extended state and consumed charge");
+            placed.put(pistonPos, expected);
+        }
+        helper.runAfterDelay(3, () -> {
+            placed.forEach((pos, state) -> {
+                helper.assertTrue(helper.getLevel().getBlockState(pos) == state, "A powered headless extended base must remain extended after neighbor updates");
+                helper.assertTrue(helper.getLevel().getBlockState(pos.relative(state.getValue(BlockStateProperties.FACING))).isAir(),
+                        "Neighbor updates must not create an extra piston head");
+            });
+            helper.succeed();
+        });
+    }
     @GameTest public void movingPistonIsForbiddenBeforeMaterialAnalysis(GameTestHelper helper) throws Exception {
         var data = new BlueprintData(UUID.randomUUID(), "Moving piston", 1, 1, 1,
                 List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.MOVING_PISTON.defaultBlockState(), null)), new LinkedHashMap<>());
@@ -202,6 +243,85 @@ public final class BlueprintGameTests {
         try { BlueprintSerializer.decode(BlueprintSerializer.encode(data), data.id, PrefabLitematicaMod.CONFIG); }
         catch (java.io.IOException expected) { refused = expected.getMessage().contains("Forbidden technical block: minecraft:moving_piston"); }
         helper.assertTrue(refused, "Transient moving-piston block entities cannot be reconstructed from cosmetic NBT"); helper.succeed();
+    }
+    @GameTest public void pasteKeepsUnsupportedRedstoneGravityFireAndFluidStates(GameTestHelper helper) throws Exception {
+        var states = List.of(
+                Blocks.STICKY_PISTON.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.WEST).setValue(BlockStateProperties.EXTENDED, true),
+                Blocks.REDSTONE_WIRE.defaultBlockState().setValue(BlockStateProperties.POWER, 15),
+                Blocks.OBSERVER.defaultBlockState().setValue(BlockStateProperties.POWERED, true),
+                Blocks.TORCH.defaultBlockState(), Blocks.SAND.defaultBlockState(), Blocks.FIRE.defaultBlockState(),
+                Blocks.OAK_SLAB.defaultBlockState().setValue(BlockStateProperties.WATERLOGGED, true),
+                Blocks.WATER.defaultBlockState().setValue(BlockStateProperties.LEVEL, 5));
+        var blocks = new ArrayList<BlueprintBlock>();
+        for (int x = 0; x < states.size(); x++) blocks.add(new BlueprintBlock(new BlockPos(x, 0, 0), states.get(x), null));
+        var data = create(helper, blocks, states.size(), 1, 1); data.fill();
+        var player = helper.makeMockServerPlayerInLevel(); var origin = helper.absolutePos(new BlockPos(2, 5, 2));
+        for (var pos : BlockPos.betweenClosed(origin.offset(-1, -1, -1), origin.offset(states.size(), 1, 1)))
+            helper.getLevel().setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+        var scan = new BlueprintPreviewScan(player, data, origin, BlueprintRotation.NONE); while (!scan.tick(1)) {}
+        helper.assertTrue(scan.clear(), "Paste preview must allow stored states that require update suppression");
+        var manager = PrefabLitematicaMod.placements(helper.getLevel().getServer());
+        manager.start(player, BlueprintItem.loaded(data), origin, BlueprintRotation.NONE); manager.tick();
+        for (int x = 0; x < states.size(); x++) {
+            var pos = origin.east(x); var state = states.get(x);
+            helper.assertTrue(helper.getLevel().getBlockState(pos) == state, "Paste must copy the exact state at " + pos);
+            helper.assertTrue(!helper.getLevel().getBlockTicks().hasScheduledTick(pos, state.getBlock()), "Paste must not manufacture block ticks");
+            if (!state.getFluidState().isEmpty()) helper.assertTrue(!helper.getLevel().getFluidTicks().hasScheduledTick(pos, state.getFluidState().getType()), "Paste must not manufacture fluid ticks");
+        }
+        helper.runAfterDelay(5, () -> {
+            for (int x = 0; x < states.size(); x++) helper.assertTrue(helper.getLevel().getBlockState(origin.east(x)) == states.get(x), "Stored states must survive ticks after paste");
+            helper.assertTrue(helper.getLevel().getBlockState(origin.east(states.size())).isAir(), "Paste must not create blocks outside the blueprint");
+            helper.succeed();
+        });
+    }
+    @GameTest public void pasteDoesNotTriggerOutsidePistonsAndNormalUpdatesStillWork(GameTestHelper helper) throws Exception {
+        var data = create(helper, List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.REDSTONE_BLOCK.defaultBlockState(), null)), 1, 1, 1); data.fill();
+        var player = helper.makeMockServerPlayerInLevel(); var origin = helper.absolutePos(new BlockPos(2, 4, 2));
+        var pistonPos = origin.east();
+        var piston = Blocks.PISTON.defaultBlockState().setValue(BlockStateProperties.FACING, Direction.EAST);
+        for (var pos : BlockPos.betweenClosed(origin.offset(-1, -1, -1), origin.offset(3, 1, 1))) helper.getLevel().setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+        helper.getLevel().setBlockAndUpdate(pistonPos, piston);
+        var manager = PrefabLitematicaMod.placements(helper.getLevel().getServer());
+        manager.start(player, BlueprintItem.loaded(data), origin, BlueprintRotation.NONE); manager.tick();
+        helper.runAfterDelay(3, () -> {
+            helper.assertTrue(helper.getLevel().getBlockState(pistonPos) == piston && helper.getLevel().getBlockState(pistonPos.east()).isAir(), "Paste must not activate a piston outside its reservation");
+            helper.getLevel().updateNeighborsAt(origin, Blocks.REDSTONE_BLOCK);
+            helper.runAfterDelay(3, () -> {
+                helper.assertTrue(helper.getLevel().getBlockState(pistonPos).getValue(BlockStateProperties.EXTENDED), "Normal world updates must work after paste");
+                helper.assertTrue(helper.getLevel().getBlockState(pistonPos.east()).is(Blocks.PISTON_HEAD), "A later external update may extend the piston normally");
+                helper.succeed();
+            });
+        });
+    }
+    @GameTest public void replacePasteResetsIdenticalBlockEntitiesWithoutDropsOrComparatorUpdates(GameTestHelper helper) throws Exception {
+        var player = helper.makeMockServerPlayerInLevel(); var origin = helper.absolutePos(new BlockPos(2, 4, 2));
+        var chestState = Blocks.CHEST.defaultBlockState();
+        var comparatorPos = origin.south();
+        for (var pos : BlockPos.betweenClosed(origin.offset(-1, -1, -1), origin.offset(1, 1, 3))) helper.getLevel().setBlockAndUpdate(pos, Blocks.AIR.defaultBlockState());
+        helper.getLevel().setBlockAndUpdate(comparatorPos.below(), Blocks.STONE.defaultBlockState());
+        helper.getLevel().setBlockAndUpdate(origin, chestState);
+        var old = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(origin);
+        var oldTag = new net.minecraft.nbt.CompoundTag(); oldTag.putString("CustomName", "Old inventory");
+        old.loadCustomOnly(net.minecraft.world.level.storage.TagValueInput.create(net.minecraft.util.ProblemReporter.DISCARDING, helper.getLevel().registryAccess(), oldTag));
+        old.setItem(0, new ItemStack(Items.DIAMOND, 64));
+        helper.assertTrue(old.getCustomName() != null, "Replacement fixture must contain old metadata");
+        var comparator = Blocks.COMPARATOR.defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.NORTH).setValue(BlockStateProperties.POWERED, true);
+        helper.getLevel().setBlock(comparatorPos, comparator, net.minecraft.world.level.block.Block.UPDATE_CLIENTS | net.minecraft.world.level.block.Block.UPDATE_SKIP_ALL_SIDEEFFECTS);
+        var data = create(helper, List.of(new BlueprintBlock(BlockPos.ZERO, chestState, new net.minecraft.nbt.CompoundTag())), 1, 1, 1); data.fill();
+        String previousMode = PrefabLitematicaMod.CONFIG.placementMode;
+        try {
+            PrefabLitematicaMod.CONFIG.placementMode = "REPLACE";
+            var manager = PrefabLitematicaMod.placements(helper.getLevel().getServer());
+            manager.start(player, BlueprintItem.loaded(data), origin, BlueprintRotation.NONE); manager.tick();
+        } finally { PrefabLitematicaMod.CONFIG.placementMode = previousMode; }
+        var fresh = (net.minecraft.world.level.block.entity.ChestBlockEntity) helper.getLevel().getBlockEntity(origin);
+        helper.assertTrue(fresh != old && fresh.isEmpty() && fresh.getCustomName() == null, "Identical chest paste must discard old inventory and metadata");
+        helper.assertTrue(!helper.getLevel().getBlockTicks().hasScheduledTick(comparatorPos, Blocks.COMPARATOR), "Reset and NBT restoration must not notify outside comparators");
+        helper.runAfterDelay(4, () -> {
+            helper.assertTrue(helper.getLevel().getBlockState(comparatorPos) == comparator, "Outside comparator must keep its state after paste");
+            helper.assertTrue(helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, new net.minecraft.world.phys.AABB(origin).inflate(2)).isEmpty(), "Replacement must not drop discarded inventory or the old chest");
+            helper.succeed();
+        });
     }
     @GameTest public void substitutedMaterialsPreserveStoredBlockState(GameTestHelper helper) throws Exception {
         var state=Blocks.OAK_PLANKS.defaultBlockState();
@@ -254,13 +374,14 @@ public final class BlueprintGameTests {
         var manager=PrefabLitematicaMod.placements(helper.getLevel().getServer());manager.start(player,item,origin,BlueprintRotation.NONE);
         boolean refused=false;try{manager.start(player,item.copy(),origin,BlueprintRotation.NONE);}catch(IllegalArgumentException expected){refused=true;}
         helper.assertTrue(refused,"Same UUID must be locked, including copied stacks");manager.tick();
-        var data2=create(helper,List.of(new BlueprintBlock(BlockPos.ZERO,Blocks.OAK_PLANKS.defaultBlockState(),null),new BlueprintBlock(new BlockPos(1,0,0),Blocks.STONE.defaultBlockState(),null)),2,1,1);data2.fill();
-        var origin2=origin.south(2);helper.getLevel().setBlockAndUpdate(origin2,Blocks.AIR.defaultBlockState());helper.getLevel().setBlockAndUpdate(origin2.east(),Blocks.AIR.defaultBlockState());
+        var data2=create(helper,List.of(new BlueprintBlock(BlockPos.ZERO,Blocks.OAK_PLANKS.defaultBlockState(),null),new BlueprintBlock(new BlockPos(16,0,0),Blocks.STONE.defaultBlockState(),null)),17,1,1);data2.fill();
+        var origin2=new BlockPos(((origin.getX() >> 4) + 1) << 4, origin.getY(), origin.getZ() + 2);
+        for(var pos:BlockPos.betweenClosed(origin2,origin2.east(16))) helper.getLevel().setBlockAndUpdate(pos,Blocks.AIR.defaultBlockState());
         var task=new dev.tensin.prefablitematica.placement.BlueprintPlacementTask(manager,player,item,data2,origin2,BlueprintRotation.NONE);
         int previous=0;boolean done=false;
         for(int tick=0;tick<100&&!done;tick++){
-            done=task.tick(1);int placed=(helper.getLevel().getBlockState(origin2).isAir()?0:1)+(helper.getLevel().getBlockState(origin2.east()).isAir()?0:1);
-            helper.assertTrue(placed-previous<=1,"A one-block budget must never place two blocks");previous=placed;
+            done=task.tick(1);int placed=(helper.getLevel().getBlockState(origin2).isAir()?0:1)+(helper.getLevel().getBlockState(origin2.east(16)).isAir()?0:1);
+            helper.assertTrue(placed-previous<=1,"A one-block target must not paste two separate chunks");previous=placed;
         }
         helper.assertTrue(done&&previous==2,"Budgeted task must eventually finish");task.close();helper.succeed();
     }
@@ -289,6 +410,102 @@ public final class BlueprintGameTests {
         try { PrefabLitematicaMod.CONFIG.creativeBatteryEnabled = false; bench.setItem(2, ItemStack.EMPTY); bench.setItem(3, ItemStack.EMPTY); bench.charge(player); }
         finally { PrefabLitematicaMod.CONFIG.creativeBatteryEnabled = enabled; }
         helper.assertTrue(!data.fullyCharged() && bench.getItem(1).getCount() == 1, "Disabled batteries must not be consumed"); helper.succeed();
+    }
+    @GameTest public void projectionFindsObstaclesInEmptyCellsWithoutLockingOrDebiting(GameTestHelper helper) throws Exception {
+        var data = create(helper, List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.STONE.defaultBlockState(), null)), 3, 1, 1);
+        data.fill(); var player = helper.makeMockServerPlayerInLevel(); var origin = helper.absolutePos(new BlockPos(1, 2, 1));
+        helper.getLevel().setBlockAndUpdate(origin, Blocks.AIR.defaultBlockState());
+        helper.getLevel().setBlockAndUpdate(origin.east(), Blocks.DIAMOND_BLOCK.defaultBlockState());
+        helper.getLevel().setBlockAndUpdate(origin.east(2), Blocks.AIR.defaultBlockState());
+        var scan = new BlueprintPreviewScan(player, data, origin, BlueprintRotation.NONE);
+        helper.assertTrue(!scan.tick(1), "Scan must obey its tick budget"); while (!scan.tick(1)) {}
+        helper.assertTrue(scan.conflicts().get(1) && scan.conflicts().cardinality() == 1, "Occupied empty schematic cell must be marked");
+        helper.assertTrue(data.fullyCharged() && !data.locked && helper.getLevel().getBlockState(origin).isAir(), "Preview must not lock, debit or place");
+        helper.getLevel().setBlockAndUpdate(origin.east(), Blocks.AIR.defaultBlockState());
+        scan = new BlueprintPreviewScan(player, data, origin, BlueprintRotation.NONE); while (!scan.tick(10)) {}
+        helper.assertTrue(scan.clear(), "Removing the obstacle must allow a subsequent scan"); helper.succeed();
+    }
+    @GameTest public void projectionAllowsUnsupportedPasteStatesAndRotatesAllThreeAxes(GameTestHelper helper) throws Exception {
+        var data = create(helper, List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.TORCH.defaultBlockState(), null)), 1, 1, 1);
+        var player = helper.makeMockServerPlayerInLevel(); var origin = helper.absolutePos(new BlockPos(1, 3, 1));
+        helper.getLevel().setBlockAndUpdate(origin, Blocks.AIR.defaultBlockState()); helper.getLevel().setBlockAndUpdate(origin.below(), Blocks.AIR.defaultBlockState());
+        var scan = new BlueprintPreviewScan(player, data, origin, BlueprintRotation.NONE); while (!scan.tick(10)) {}
+        helper.assertTrue(scan.clear(), "Floating stored blocks must be allowed by paste preview");
+        helper.getLevel().setBlockAndUpdate(origin.below(), Blocks.STONE.defaultBlockState());
+        scan = new BlueprintPreviewScan(player, data, origin, BlueprintRotation.CW_90); while (!scan.tick(10)) {}
+        helper.assertTrue(scan.clear(), "Supported blocks must also be allowed after rotation");
+        var asymmetric = create(helper, List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.STONE.defaultBlockState(), null)), 2, 2, 3);
+        var rotated = new BlueprintPreviewScan(player, asymmetric, origin.offset(1, 2, 3), BlueprintRotation.CW_90);
+        helper.assertTrue(rotated.width == 3 && rotated.depth == 2 && rotated.position(11).equals(origin.offset(3, 3, 4)), "Rotated scan bounds and X/Y/Z coordinates must agree"); helper.succeed();
+    }
+    @GameTest public void onlyPanelCanStartPreviewAndConflictCannotConfirm(GameTestHelper helper) throws Exception {
+        var data = create(helper, List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.STONE.defaultBlockState(), null)), 1, 1, 1); data.fill();
+        var player = helper.makeMockServerPlayerInLevel(); var origin = helper.absolutePos(new BlockPos(1, 2, 1));
+        var stack = BlueprintItem.loaded(data); player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, stack);
+        helper.getLevel().setBlockAndUpdate(origin, Blocks.DIAMOND_BLOCK.defaultBlockState());
+        var hit = new net.minecraft.world.phys.BlockHitResult(net.minecraft.world.phys.Vec3.atCenterOf(origin.below()), net.minecraft.core.Direction.UP, origin.below(), false);
+        stack.getItem().useOn(new net.minecraft.world.item.context.UseOnContext(player, net.minecraft.world.InteractionHand.MAIN_HAND, hit));
+        var previews = PrefabLitematicaMod.previews(helper.getLevel().getServer());
+        helper.assertTrue(previews.session(player) == null && data.fullyCharged() && !data.locked, "Right-click must not start a projection or placement");
+        stack.getItem().useOn(new net.minecraft.world.item.context.UseOnContext(player, net.minecraft.world.InteractionHand.MAIN_HAND, hit));
+        helper.assertTrue(previews.session(player) == null && BlueprintItem.rotation(stack) == 0, "Repeated use must not alter the building pose");
+        previews.handle(player, new BlueprintPreviewPayload.Request(data.id, 0, BlueprintPreviewPayload.START, origin, 0));
+        var session = previews.session(player);
+        helper.assertTrue(session != null && !session.shown, "Opening a charged blueprint panel must initially hide the projection");
+        previews.handle(player, new BlueprintPreviewPayload.Request(session.token, 0, BlueprintPreviewPayload.CONFIRM, origin, 0)); previews.tick();
+        helper.assertTrue(!data.locked && !session.shown && data.fullyCharged(), "Execute must be rejected before showing the preview");
+        previews.handle(player, new BlueprintPreviewPayload.Request(session.token, 0, BlueprintPreviewPayload.SHOW, origin, 0));
+        previews.tick();
+        previews.handle(player, new BlueprintPreviewPayload.Request(session.token, 0, BlueprintPreviewPayload.CONFIRM, origin, 0)); previews.tick();
+        helper.assertTrue(previews.session(player) == session && !data.locked && data.fullyCharged() && helper.getLevel().getBlockState(origin).is(Blocks.DIAMOND_BLOCK), "Conflicted confirmation must preserve projection, terrain and charge");
+        previews.handle(player, new BlueprintPreviewPayload.Request(session.token, 0, BlueprintPreviewPayload.CANCEL, origin, 0));
+        helper.assertTrue(previews.session(player) == null && data.fullyCharged(), "Cancel must keep the charged blueprint"); helper.succeed();
+    }
+    @GameTest public void confirmationRechecksChangedTerrainBeforePlacement(GameTestHelper helper) throws Exception {
+        var data = create(helper, List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.STONE.defaultBlockState(), null)), 1, 1, 1); data.fill();
+        var player = helper.makeMockServerPlayerInLevel(); var origin = helper.absolutePos(new BlockPos(1, 2, 1));
+        var stack = BlueprintItem.loaded(data); player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, stack);
+        helper.getLevel().setBlockAndUpdate(origin, Blocks.AIR.defaultBlockState());
+        var previews = PrefabLitematicaMod.previews(helper.getLevel().getServer()); previews.begin(player, stack, origin, BlueprintRotation.NONE);
+        var session = previews.session(player);
+        previews.handle(player, new BlueprintPreviewPayload.Request(session.token, 0, BlueprintPreviewPayload.SHOW, origin, 0)); previews.tick();
+        helper.assertTrue(session.scan.clear(), "Initial clear area should pass after showing the preview");
+        helper.getLevel().setBlockAndUpdate(origin, Blocks.DIAMOND_BLOCK.defaultBlockState());
+        previews.handle(player, new BlueprintPreviewPayload.Request(session.token, 0, BlueprintPreviewPayload.CONFIRM, origin, 0)); previews.tick();
+        helper.assertTrue(previews.session(player) == session && !session.scan.clear() && data.fullyCharged() && !data.locked, "A stale green preview cannot overwrite a new obstacle");
+        helper.getLevel().setBlockAndUpdate(origin, Blocks.AIR.defaultBlockState());
+        previews.handle(player, new BlueprintPreviewPayload.Request(session.token, 1, BlueprintPreviewPayload.MOVE, origin, 1)); previews.tick();
+        helper.assertTrue(session.scan.clear(), "Moving/rotating must rescan the new pose");
+        previews.handle(player, new BlueprintPreviewPayload.Request(session.token, 0, BlueprintPreviewPayload.CONFIRM, origin, 0));
+        helper.assertTrue(!data.locked, "An obsolete pose must not confirm the updated projection");
+        previews.handle(player, new BlueprintPreviewPayload.Request(session.token, 1, BlueprintPreviewPayload.CONFIRM, origin, 1)); previews.tick();
+        helper.assertTrue(previews.session(player) == null && data.locked, "Only an explicit valid confirmation may start placement");
+        PrefabLitematicaMod.placements(helper.getLevel().getServer()).tick();
+        helper.assertTrue(helper.getLevel().getBlockState(origin).is(Blocks.STONE) && !data.fullyCharged(), "Confirmed placement must debit charge exactly once"); helper.succeed();
+    }
+    @GameTest public void projectionOutsideBoundsRemainsInspectableAndRejectsForgedToken(GameTestHelper helper) throws Exception {
+        var data = create(helper, List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.STONE.defaultBlockState(), null)), 1, 1, 1); data.fill();
+        var player = helper.makeMockServerPlayerInLevel(); var stack = BlueprintItem.loaded(data); player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, stack);
+        var origin = new BlockPos(0, helper.getLevel().getMaxY() + 1, 0); var previews = PrefabLitematicaMod.previews(helper.getLevel().getServer());
+        previews.begin(player, stack, origin, BlueprintRotation.NONE); var session = previews.session(player);
+        previews.handle(player, new BlueprintPreviewPayload.Request(session.token, 0, BlueprintPreviewPayload.SHOW, origin, 0)); previews.tick();
+        helper.assertTrue(session != null && session.scan.conflicts().get(0) && !data.locked, "Out-of-bounds area must produce a red projection");
+        previews.handle(player, new BlueprintPreviewPayload.Request(UUID.randomUUID(), 1, BlueprintPreviewPayload.MOVE, BlockPos.ZERO, 1));
+        helper.assertTrue(session.origin.equals(origin) && session.revision == 0, "Forged session token must not move another projection");
+        previews.disconnect(player); helper.assertTrue(previews.session(player) == null && data.fullyCharged(), "Disconnect must release preview without charging"); helper.succeed();
+    }
+    @GameTest public void openingPanelRequiresFullyChargedHeldBlueprint(GameTestHelper helper) throws Exception {
+        var data = create(helper, List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.STONE.defaultBlockState(), null)), 1, 1, 1);
+        var player = helper.makeMockServerPlayerInLevel(); var stack = BlueprintItem.loaded(data);
+        player.setItemInHand(net.minecraft.world.InteractionHand.MAIN_HAND, stack);
+        var previews = PrefabLitematicaMod.previews(helper.getLevel().getServer()); var pos = helper.absolutePos(new BlockPos(1, 2, 1));
+        previews.handle(player, new BlueprintPreviewPayload.Request(data.id, 0, BlueprintPreviewPayload.START, pos, 0));
+        helper.assertTrue(previews.session(player) == null && !data.locked, "Uncharged blueprint must not open a placement session");
+        data.fill(); previews.handle(player, new BlueprintPreviewPayload.Request(UUID.randomUUID(), 0, BlueprintPreviewPayload.START, pos, 0));
+        helper.assertTrue(previews.session(player) == null, "Start request must refer to a blueprint actually held by the player");
+        previews.handle(player, new BlueprintPreviewPayload.Request(data.id, 0, BlueprintPreviewPayload.START, pos, 0)); previews.tick();
+        helper.assertTrue(previews.session(player) != null && !previews.session(player).shown && data.fullyCharged(), "Opening the panel must not render, reserve or debit");
+        previews.disconnect(player); helper.succeed();
     }
     @GameTest public void oldBatterySlotMigratesAndShiftClickUsesMaterialInput(GameTestHelper helper) throws Exception {
         var player = helper.makeMockServerPlayerInLevel(); var pos = helper.absolutePos(new BlockPos(1, 1, 1));

@@ -72,7 +72,6 @@ class MaterialResolverTest {
             var headPos = BlockPos.ZERO.relative(direction); var structure = Map.of(BlockPos.ZERO, base, headPos, head);
             assertEquals(new BlockMaterialResolver.Cost(block.asItem(), 1), resolver.resolve(base, structure, BlockPos.ZERO));
             assertEquals(0, resolver.resolve(head, structure, headPos).count());
-            assertThrows(IllegalArgumentException.class, () -> resolver.resolve(base, Map.of(), BlockPos.ZERO));
             assertThrows(IllegalArgumentException.class, () -> resolver.resolve(head, Map.of(), headPos));
             for (var invalid : List.of(head.setValue(BlockStateProperties.FACING, direction.getOpposite()),
                     head.setValue(BlockStateProperties.PISTON_TYPE, type == PistonType.STICKY ? PistonType.DEFAULT : PistonType.STICKY),
@@ -84,6 +83,19 @@ class MaterialResolverTest {
             var retracted = base.setValue(BlockStateProperties.EXTENDED, false);
             assertThrows(IllegalArgumentException.class, () -> resolver.resolve(head, Map.of(BlockPos.ZERO, retracted), headPos));
             assertEquals(new BlockMaterialResolver.Cost(block.asItem(), 1), resolver.resolve(retracted, Map.of(), BlockPos.ZERO));
+        }
+    }
+
+    @Test void headlessExtendedPistonsChargeOneBaseInEveryDirection() {
+        for (var direction : Direction.values()) for (var block : List.of(Blocks.PISTON, Blocks.STICKY_PISTON)) {
+            var base = block.defaultBlockState().setValue(BlockStateProperties.FACING, direction).setValue(BlockStateProperties.EXTENDED, true);
+            var headPos = BlockPos.ZERO.relative(direction);
+            var expected = new BlockMaterialResolver.Cost(block.asItem(), 1);
+            assertEquals(expected, resolver.resolve(base, Map.of(BlockPos.ZERO, base), BlockPos.ZERO));
+            for (var air : List.of(Blocks.AIR, Blocks.CAVE_AIR, Blocks.VOID_AIR))
+                assertEquals(expected, resolver.resolve(base, Map.of(BlockPos.ZERO, base, headPos, air.defaultBlockState()), BlockPos.ZERO));
+            assertThrows(IllegalArgumentException.class, () -> resolver.resolve(base,
+                    Map.of(BlockPos.ZERO, base, headPos, Blocks.STONE.defaultBlockState()), BlockPos.ZERO));
         }
     }
 

@@ -5,16 +5,12 @@ package dev.tensin.prefablitematica.item;
 
 import dev.tensin.prefablitematica.PrefabLitematicaMod;
 import dev.tensin.prefablitematica.blueprint.BlueprintData;
-import dev.tensin.prefablitematica.placement.BlueprintRotation;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.*;
 import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.item.component.TooltipDisplay;
-import net.minecraft.world.item.context.UseOnContext;
 import java.util.UUID;
 
 public final class BlueprintItem extends Item {
@@ -44,20 +40,5 @@ public final class BlueprintItem extends Item {
         if (tag.contains("size_x")) tooltip.accept(Component.translatable("tooltip.prefablitematica.size", tag.getIntOr("size_x", 0), tag.getIntOr("size_y", 0), tag.getIntOr("size_z", 0)));
         tooltip.accept(Component.translatable("tooltip.prefablitematica.blocks", tag.getIntOr("blocks", 0)));
         tooltip.accept(Component.translatable("tooltip.prefablitematica.use"));
-    }
-    @Override public InteractionResult useOn(UseOnContext context) {
-        if (context.getLevel().isClientSide()) return InteractionResult.SUCCESS;
-        if (!(context.getPlayer() instanceof ServerPlayer player)) return InteractionResult.FAIL;
-        ItemStack stack = context.getItemInHand();
-        if (player.isShiftKeyDown()) {
-            CompoundTag tag = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).copyTag(); int turns = (rotation(stack) + 1) % 4;
-            tag.putInt("rotation", turns); stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
-            player.sendSystemMessage(Component.translatable("message.prefablitematica.rotation", turns * 90), true); return InteractionResult.SUCCESS;
-        }
-        var origin = context.getClickedPos().relative(context.getClickedFace());
-        try {
-            PrefabLitematicaMod.placements(player.level().getServer()).start(player, stack, origin, BlueprintRotation.values()[rotation(stack)]);
-            return InteractionResult.SUCCESS;
-        } catch (Exception e) { player.sendSystemMessage(Component.literal(e.getMessage()), false); return InteractionResult.FAIL; }
     }
 }

@@ -47,8 +47,10 @@ public final class BlockMaterialResolver {
             var facing = state.getValue(BlockStateProperties.FACING);
             BlockState head = structure.get(pos.relative(facing));
             PistonType expected = state.is(Blocks.STICKY_PISTON) ? PistonType.STICKY : PistonType.DEFAULT;
-            if (head == null || !head.is(Blocks.PISTON_HEAD) || head.getValue(BlockStateProperties.FACING) != facing
-                    || head.getValue(BlockStateProperties.PISTON_TYPE) != expected || head.getValue(BlockStateProperties.SHORT))
+            // A static extended base can be headless or cropped at the schematic boundary.
+            // Preserve that state and charge its item without creating a head outside the blueprint.
+            if (head != null && !head.isAir() && (!head.is(Blocks.PISTON_HEAD) || head.getValue(BlockStateProperties.FACING) != facing
+                    || head.getValue(BlockStateProperties.PISTON_TYPE) != expected || head.getValue(BlockStateProperties.SHORT)))
                 throw new IllegalArgumentException("Incomplete extended piston at " + pos.toShortString());
         }
         if (block instanceof DoorBlock || block instanceof DoublePlantBlock && (!(block instanceof PitcherCropBlock) || state.getValue(BlockStateProperties.AGE_4) >= 3)) {

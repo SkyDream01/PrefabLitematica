@@ -56,6 +56,22 @@ fabricApi {
     }
 }
 loom.runs.configureEach { vmArg "-Dprefablitematica.projectDir=${project.projectDir.absolutePath}" }
+
+// Run focused client regressions independently of the complete GUI suite.
+tasks.named('processGametestResources') {
+    inputs.property 'projectionOnly', project.hasProperty('projectionOnly')
+    inputs.property 'pistonOnly', project.hasProperty('pistonOnly')
+    doLast {
+        if (project.hasProperty('projectionOnly') || project.hasProperty('pistonOnly')) {
+            def metadataFile = new File(destinationDir, 'fabric.mod.json')
+            def metadata = new groovy.json.JsonSlurper().parse(metadataFile)
+            metadata.entrypoints['fabric-client-gametest'] = [project.hasProperty('pistonOnly')
+                    ? 'dev.tensin.prefablitematica.PearlSchematicClientGameTest'
+                    : 'dev.tensin.prefablitematica.ProjectionClientGameTest']
+            metadataFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(metadata))
+        }
+    }
+}
 tasks.register('sourceDistribution', Zip) {
     archiveFileName = "${base.archivesName.get()}-${project.version}-source.zip"
     destinationDirectory = layout.buildDirectory.dir('distributions')

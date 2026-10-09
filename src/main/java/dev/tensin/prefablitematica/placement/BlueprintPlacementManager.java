@@ -22,6 +22,7 @@ public final class BlueprintPlacementManager {
         if (tasks.size() >= PrefabLitematicaMod.CONFIG.maxConcurrentTasks) throw new IllegalArgumentException("Placement server is busy");
         var data = PrefabLitematicaMod.manager(server).get(BlueprintItem.id(stack));
         if (data == null) throw new IllegalArgumentException("Import a projection at the blueprint workbench first");
+        if (data.requiresReimport) throw new IllegalArgumentException("Reimport the original schematic: this legacy blueprint lost comparator output data");
         if (data.locked) throw new IllegalArgumentException("Blueprint is already in use");
         if (!data.fullyCharged()) throw new IllegalArgumentException("Blueprint must be charged to 100%");
         var task = new BlueprintPlacementTask(this, player, stack, data, origin, rotation);

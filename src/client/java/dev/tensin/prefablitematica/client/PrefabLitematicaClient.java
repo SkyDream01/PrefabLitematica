@@ -12,6 +12,7 @@ import net.minecraft.client.gui.screens.MenuScreens;
 
 public final class PrefabLitematicaClient implements ClientModInitializer {
     @Override public void onInitializeClient() {
+        BlueprintProjectionClient.register();
         MenuScreens.register(PrefabLitematicaMod.WORKBENCH_MENU, BlueprintWorkbenchScreen::new);
         ClientPlayNetworking.registerGlobalReceiver(BlueprintPayload.Response.TYPE, (response, context) -> {
             if (context.client().gui.screen() instanceof BlueprintWorkbenchScreen screen && screen.getMenu().containerId == response.value().syncId()) screen.receive(response.value());

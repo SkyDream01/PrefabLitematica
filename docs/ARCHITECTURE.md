@@ -11,15 +11,17 @@
 
 网络每片最大 24 KiB，逐片确认；全服至多两个上传/分析会话；未活动上传 60 秒过期。服务端检查压缩和解压大小、UTF-8、尺寸、数量、重复坐标、注册 ID、全部属性及属性值、流体一致性、NBT 大小和深度。客户端不能提供最终材料分类、进度、UUID 或实体数据。
 
-BlockEntity 使用按实际方块实体类型选择的白名单：保留比较器 `OutputSignal`（0–15）、漏斗传输冷却、熔炉/高炉/烟熏炉的燃烧与烹饪计时、酿造计时、合成器运行数据，以及告示牌和旗帜装饰。容器为空，移除库存、战利品和组件数据，删除命令点击行为。客户端导出时过滤失效条目，并在传输前移除库存，服务端仍验证方块实体 ID、大小与深度。不在白名单内的运行数据仍不导入；`forbidden_blocks` Tag 继续禁止命令方块、刷怪笼、结构方块、移动活塞和工程台自身。
+BlockEntity 使用按实际方块实体类型选择的白名单：保留比较器 `OutputSignal`（0–15）、漏斗传输冷却、熔炉/高炉/烟熏炉的燃烧与烹饪计时、酿造计时、合成器运行数据，以及告示牌和旗帜装饰。容器为空，移除库存、战利品和组件数据，删除命令点击行为。客户端导出时过滤失效条目，并在传输前移除库存，服务端仍验证方块实体 ID、大小与深度。不在白名单内的运行数据仍不导入。地狱门方块在客户端导入时替换为空气并校验完整矩形门洞与黑曜石框；切门或不完整门框仍可导入，但会记录手动处理提示。`forbidden_blocks` Tag 仍拒绝未经转换上传的地狱门方块，以及命令方块、结构方块、拼图方块、屏障、光照方块、移动活塞和工程台自身。
 
-结构格式 BPR2 额外保存原理图中的方块/流体定时 Tick（坐标、类型、触发值、优先级与子序号），验证类型与对应 BlockState 一致，禁止重复和越界。BPR1 仍可读取；含缺失比较器输出数据的旧蓝图保留记录及充能，但禁止预览和放置，提示重新导入原文件。工程台允许原位刷新这类旧蓝图，服务端逐格检查坐标、尺寸、BlockState 和材料需求相同后保留 UUID 与充能，只替换运行元数据；旧文件丢失的数值无法从 `powered` 属性推算。
+结构格式 BPR2 额外保存原理图中的方块/流体定时 Tick（坐标、类型、触发值、优先级与子序号），BPR3 保存地狱门手动点火提示，BPR4 再保存切门提示；定时 Tick 验证类型与对应 BlockState 一致，并禁止重复和越界。BPR1 至 BPR4 均可读取；含缺失比较器输出数据的旧蓝图保留记录及充能，但禁止预览和放置，提示重新导入原文件。工程台允许原位刷新这类旧蓝图，服务端逐格检查坐标、尺寸、BlockState 和材料需求相同后保留 UUID 与充能，只替换运行元数据；旧文件丢失的数值无法从 `powered` 属性推算。
 
 充能时先消耗材料并返还空桶及潜影盒，将工程台所在世界的区块数据和玩家库存保存到磁盘，再原子保存充能进度。这一步有同步存盘成本，但避免重启后材料和充能同时保留。
 
-单人集成服务器安装 Litematica 时，`LitematicaPaste` 直接调用 [Litematica 的 `SchematicPlacingUtils.placeToWorldWithinChunk`](https://github.com/sakura-ryoko/litematica/blob/26.3/src/main/java/fi/dy/masa/litematica/util/SchematicPlacingUtils.java)，使用经过服务端验证的状态及 NBT 重建临时原理图，不注册世界投影。专用服务器或无 Litematica 时使用 `BlueprintPaste`，按同样的每格流程写入状态、重建旧 BlockEntity 并立即恢复 NBT。两种路径都以完整区块为放置单元；`blocksPlacedPerTick` 是目标预算，不会把同一区块的状态和 NBT 拆到不同 Tick。
+单人集成服务器安装 Litematica 时，`LitematicaPaste` 直接调用 [Litematica 的 `SchematicPlacingUtils.placeToWorldWithinChunk`](https://github.com/sakura-ryoko/litematica/blob/26.3/src/main/java/fi/dy/masa/litematica/util/SchematicPlacingUtils.java)，使用经过服务端验证的状态及 NBT 重建临时原理图，不注册世界投影；对原理图中明确存储为空气的格，在原生粘贴后另行清空。专用服务器或无 Litematica 时使用 `BlueprintPaste`，按同样的每格流程写入状态（包括空气）、重建旧 BlockEntity 并立即恢复 NBT。两种路径都以完整区块为放置单元；`blocksPlacedPerTick` 是目标预算，不会把同一区块的状态和 NBT 拆到不同 Tick。
 
 专用服务器通过 Minecraft 26.3 的 `UPDATE_CLIENTS | UPDATE_SKIP_ALL_SIDEEFFECTS` 抑制放置回调、邻居形状更新、方块实体移除副作用和掉落。粘贴不检查支撑或修正含水、流体等级、红石强度、活塞伸出等状态，不额外启动重力、火焰或流体 Tick；已有原理图定时 Tick 则按保存的数据恢复。
+
+基岩、末地传送门框架、末地传送门、末地折跃门、紫水晶母岩、试炼刷怪笼、试炼宝库和普通刷怪笼保留在结构数据与投影中，但不计材料、不作为冲突位置。两种粘贴路径都会跳过这些目标格，不覆盖现有方块或方块实体；指向这些格的保存 Tick 也不会安排。
 
 覆盖已有 BlockEntity 时通过临时屏障重建，即使状态相同也清除旧库存和元数据；专用服务器恢复 NBT 后仅标记区块并同步客户端，避免 `setChanged()` 的比较器通知。材料系统仍不复制实体和库存，因此一般原理图的等效范围是支持导入的方块状态、白名单运行 NBT 和定时 Tick；本次珍珠炮原文件的实体、库存和 Tick 列表为空，72 个方块实体均已逐项对照实际粘贴验证。后续正常更新仍遵循原版机制。临时区块 Ticket 在任务结束释放，范围预留和 UUID 锁定保持到任务完成。
 

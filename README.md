@@ -4,7 +4,7 @@
 
 # PrefabLitematica
 
-**0.1.2 · Minecraft 26.3 · Fabric · Java 25**
+**0.1.3 · Minecraft 26.3 · Fabric · Java 25**
 
 将 Litematica 原理图变成可充能蓝图：玩家提交建筑所需材料，服务端验证后按 Tick 放置，并保留原理图中的方块状态。
 
@@ -35,6 +35,7 @@
 - **材料替代**：按大类与形态匹配 45 类材料，桶装流体用后返还空桶；方块状态仍按原始建筑保存。
 - **材料转换**：泥土可供料草方块；铲子、锄头、剪刀和斧头可将原料转换成蓝图所需材料，每次工具操作消耗 1 点耐久，支持潜影盒中的原料与工具。细雪使用细雪桶供料并返还空桶。
 - **服务端放置**：服务端验证材料和场地，单人环境直接调用 Litematica 粘贴实现，专用服务器使用对应实现；保留原始状态、比较器等机器运行数据及原理图定时 Tick。
+- **特殊方块处理**：基岩、末地传送门框架/方块/折跃门、紫水晶母岩、试炼刷怪笼/宝库和刷怪笼正常显示在预览中，不收材料、不报冲突，放置时保留世界原内容。导入地狱门会清空门洞并提示手动点火；切门结构会提示手动处理。
 - **方向与界面**：支持四方向旋转、中英文界面及原版容器风格。
 - **放置前投影**：面板显示建筑数据，提供三轴坐标、90° 分档旋转、显示投影与执行按钮；复用 Litematica 显示建筑并标红冲突，无冲突且点击执行后才消耗充能。未安装 Litematica 时提供内置轮廓投影。
 
@@ -46,11 +47,11 @@
 | Java | 25 | 客户端与服务端 |
 | Fabric Loader | 0.19.5 或更高 | 客户端与服务端 |
 | Fabric API | 0.161.0+26.3 或兼容更新 | 客户端与服务端 |
-| PrefabLitematica | 0.1.2 | 客户端与服务端 |
+| PrefabLitematica | 0.1.3 | 客户端与服务端 |
 | Litematica | 0.29.1（已适配） | 需要导入建筑的客户端 |
 | MaLiLib | 0.30.2（配合上述 Litematica） | 需要导入建筑的客户端 |
 
-将 `prefablitematica-fabric-26.3-0.1.2.jar` 放入客户端和服务端的 `mods/` 目录，并安装 Fabric API。客户端与服务端使用同一版本。Dedicated Server 不需要安装 Litematica 或 MaLiLib。
+将 `prefablitematica-fabric-26.3-0.1.3.jar` 放入客户端和服务端的 `mods/` 目录，并安装 Fabric API。客户端与服务端使用同一版本。Dedicated Server 不需要安装 Litematica 或 MaLiLib。
 
 ## 构建
 
@@ -70,8 +71,8 @@ chmod +x gradlew
 构建产物位于 `build/libs/`：
 
 ```text
-prefablitematica-fabric-26.3-0.1.2.jar
-prefablitematica-fabric-26.3-0.1.2-sources.jar
+prefablitematica-fabric-26.3-0.1.3.jar
+prefablitematica-fabric-26.3-0.1.3-sources.jar
 ```
 
 生成资源已随源码提交，正常构建无需运行 Datagen。开发环境固定 Fabric Loom 1.17.21、Gradle Wrapper 9.6.0；版本配置见 `gradle.properties`。

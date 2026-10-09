@@ -142,6 +142,8 @@ public final class BlueprintNetworking {
         if (data != null) {
             result.addProperty("name", data.name); result.addProperty("size", data.sizeX + " × " + data.sizeY + " × " + data.sizeZ);
             result.addProperty("blocks", data.blocks.size()); result.addProperty("charge", data.charge()); result.addProperty("locked", data.locked); result.addProperty("requiresReimport", data.requiresReimport);
+            result.addProperty("portalNeedsIgnition", data.portalNeedsIgnition);
+            result.addProperty("portalNeedsSlicing", data.portalNeedsSlicing);
             var rows = data.requirementsForInput();
             int pages = Math.max(1, (rows.size() + PAGE_SIZE - 1) / PAGE_SIZE); menu.page = Math.min(menu.page, pages - 1);
             result.addProperty("page", menu.page); result.addProperty("pages", pages); JsonArray materials = new JsonArray();

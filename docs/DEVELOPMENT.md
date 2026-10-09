@@ -7,7 +7,7 @@
 | 标识 | 值 |
 | --- | --- |
 | 显示名称 / Gradle 项目名 | PrefabLitematica |
-| 版本 | 0.1.2 |
+| 版本 | 0.1.3 |
 | 项目原创代码许可证 | `AGPL-3.0-only` |
 | Fabric Mod ID / 资源与网络命名空间 | `prefablitematica` |
 | Java 包 / Maven group | `dev.tensin.prefablitematica` |
@@ -22,7 +22,7 @@
 ```text
 src/main/java/dev/tensin/prefablitematica/
   PrefabLitematicaMod.java      注册物品、方块和服务端生命周期
-  blueprint/                   结构模型、序列化、材料分析与进度存储
+  blueprint/                   结构模型、序列化、材料分析、保留方块策略与进度存储
   material/                    方块计费、流体计费与材料 Tags
   security/                    压缩大小限制与 NBT 清洗
   placement/                   旋转、权限检查、范围预留和分 Tick 无更新粘贴
@@ -61,6 +61,9 @@ docs/                         使用、配置、架构、验证及截图
 # 真实珍珠炮导入、充能、原文件直接粘贴对照及三种路径自动发射
 .\gradlew.bat -PwithLitematica -PpistonOnly runClientGameTest
 
+# 地狱门、切门提示、保留方块、四方向原生粘贴及生存导入限制
+.\gradlew.bat -PwithLitematica -PpolicyOnly runClientGameTest
+
 # 生成配方、Tags、语言、模型和贴图；随后重新构建
 .\gradlew.bat runDatagen
 .\gradlew.bat build
@@ -76,9 +79,9 @@ docs/                         使用、配置、架构、验证及截图
 
 产物：
 
-- `build/libs/prefablitematica-fabric-26.3-0.1.2.jar`
-- `build/libs/prefablitematica-fabric-26.3-0.1.2-sources.jar`
-- `build/distributions/prefablitematica-fabric-26.3-0.1.2-source.zip`
+- `build/libs/prefablitematica-fabric-26.3-0.1.3.jar`
+- `build/libs/prefablitematica-fabric-26.3-0.1.3-sources.jar`
+- `build/distributions/prefablitematica-fabric-26.3-0.1.3-source.zip`
 
 版本只在 `gradle.properties` 的 `version` 更新，主模组和测试模组元数据由资源处理任务展开；Minecraft 版本由 `minecraft_version` 控制产物前缀。
 
@@ -86,6 +89,6 @@ docs/                         使用、配置、架构、验证及截图
 
 客户端原理图回归资源位于 `src/gametest/resources/prefablitematica-test/`。`swamp-mob-farm.litematic` 来自用户提供的 `沼泽刷怪塔-hsds.litematic`，原作者为 `white_elephant_`；`pearl-headless-pistons.litematic` 来自用户提供的 `pearl_X1012.8_Z1012.8_TNT24-24_BOOST20_v9-zero-axis.litematic`，元数据作者为 `Yisibite`，用于验证两个边界无头伸出活塞的导入。这些文件仅用于测试，包含在项目源码归档中，不进入发布版 JAR。
 
-`.gitignore` 排除 Gradle 缓存、构建输出、运行目录、日志、本地参考资料、IDE 配置及机器私有文件。提交包含 Gradle Wrapper、全部源代码、生成资源、测试和文档。
+`.gitignore` 排除 Gradle 缓存、构建输出、运行目录、日志、本地参考资料与视频素材目录、IDE 配置及机器私有文件。提交包含 Gradle Wrapper、全部源代码、生成资源、测试和文档。
 
 发布前执行构建与对应回归，检查 JAR 中的名称、版本、入口和资源命名空间，并更新 [验证记录](VALIDATION.md) 与 [更新日志](../CHANGELOG.md)。

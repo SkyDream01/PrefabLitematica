@@ -24,6 +24,7 @@ public final class BlueprintPlacementTask {
     private final BlueprintRotation rotation;
     private final int width, depth;
     private final Map<ChunkPos, List<BlueprintBlock>> blocksByChunk = new LinkedHashMap<>();
+    private final Set<BlockPos> preservedPositions = new HashSet<>();
     private List<ChunkPos> chunks;
     private LitematicaPaste nativePaste;
     private final Set<net.minecraft.world.level.ChunkPos> pinned = new HashSet<>();
@@ -33,6 +34,10 @@ public final class BlueprintPlacementTask {
         this.manager = manager; this.player = player; this.item = item; this.data = data; this.origin = origin; this.rotation = rotation;
         world = player.level(); width = rotation.ordinal() % 2 == 0 ? data.sizeX : data.sizeZ; depth = rotation.ordinal() % 2 == 0 ? data.sizeZ : data.sizeX;
         maximum = origin.offset(width - 1, data.sizeY - 1, depth - 1);
+        for (BlueprintBlock block : data.blocks) {
+            if (BlueprintBlockPolicy.isPreserved(block.state()))
+                preservedPositions.add(origin.offset(rotation.apply(block.relativePos(), data.sizeX, data.sizeZ)));
+        }
     }
     private BlockPos target(BlueprintBlock b) { return origin.offset(rotation.apply(b.relativePos(), data.sizeX, data.sizeZ)); }
     public boolean contains(BlockPos p) { return p.getX() >= origin.getX() && p.getX() <= maximum.getX() && p.getY() >= origin.getY() && p.getY() <= maximum.getY() && p.getZ() >= origin.getZ() && p.getZ() <= maximum.getZ(); }
@@ -49,7 +54,7 @@ public final class BlueprintPlacementTask {
                 if (index < volume) {
                     int x = index % width, z = (index / width) % depth, y = index / (width * depth); index++;
                     BlockPos pos = origin.offset(x, y, z);
-                    PlacementValidator.validate(player, pos);
+                    if (!preservedPositions.contains(pos)) PlacementValidator.validate(player, pos);
                     var chunk = new net.minecraft.world.level.ChunkPos(pos.getX() >> 4, pos.getZ() >> 4);
                     if (pinned.add(chunk)) world.getChunkSource().addTicketWithRadius(PrefabLitematicaMod.PLACEMENT_TICKET, chunk, 0);
                     continue;
@@ -61,6 +66,7 @@ public final class BlueprintPlacementTask {
                     nativePaste = new LitematicaPaste(world, origin, width, data.sizeY, depth, data.name);
                 if (index < data.blocks.size()) {
                     var b = data.blocks.get(index++); var transformed = new BlueprintBlock(target(b), b.state().rotate(rotation.vanilla), b.blockEntity());
+                    if (BlueprintBlockPolicy.isPreserved(transformed.state())) continue;
                     blocksByChunk.computeIfAbsent(new ChunkPos(transformed.relativePos().getX() >> 4, transformed.relativePos().getZ() >> 4), ignored -> new ArrayList<>()).add(transformed);
                     if (nativePaste != null) nativePaste.add(transformed);
                     continue;
@@ -93,7 +99,9 @@ public final class BlueprintPlacementTask {
             }
             if (phase == 4) {
                 if (index < data.scheduledTicks.size()) {
-                    data.scheduledTicks.get(index++).schedule(world, origin, rotation, data.sizeX, data.sizeZ);
+                    var tick = data.scheduledTicks.get(index++);
+                    if (!preservedPositions.contains(origin.offset(rotation.apply(tick.position(), data.sizeX, data.sizeZ))))
+                        tick.schedule(world, origin, rotation, data.sizeX, data.sizeZ);
                     continue;
                 }
                 if (PrefabLitematicaMod.CONFIG.consumeBlueprintAfterPlacement) {

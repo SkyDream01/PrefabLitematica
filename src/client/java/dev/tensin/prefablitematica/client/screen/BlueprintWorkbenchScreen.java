@@ -141,15 +141,30 @@ public final class BlueprintWorkbenchScreen extends AbstractContainerScreen<Blue
             if (status.has("message") && !status.get("message").getAsString().isEmpty()) {
                 String serverMessage = status.get("message").getAsString();
                 message = switch (serverMessage) {
-                    case "Imported" -> Component.translatable("gui.prefablitematica.imported").getString();
+                    case "Imported" -> portalNotice(status);
                     case "Validating materials…", "Validating structure…" -> Component.translatable("gui.prefablitematica.validating").getString();
                     default -> serverMessage;
                 };
+            } else if (status.has("portalNeedsIgnition") && status.get("portalNeedsIgnition").getAsBoolean()) {
+                message = portalNotice(status);
             }
             if (status.has("name")) awaitingImport = false;
             importButton.active = catalogOpen || (!awaitingImport && capture == null && encoded == null && upload == null && LitematicaIntegration.available()
                     && (!status.has("name") || status.has("requiresReimport") && status.get("requiresReimport").getAsBoolean()));
         }
+    }
+    private static String portalNotice(JsonObject status) {
+        if (status.has("portalNeedsSlicing") && status.get("portalNeedsSlicing").getAsBoolean())
+            return Component.translatable("gui.prefablitematica.portal_slicing").getString();
+        if (status.has("portalNeedsIgnition") && status.get("portalNeedsIgnition").getAsBoolean())
+            return Component.translatable("gui.prefablitematica.portal_ignite").getString();
+        return Component.translatable("gui.prefablitematica.imported").getString();
+    }
+    private String visibleMessage() {
+        if (status.has("portalNeedsIgnition") && status.get("portalNeedsIgnition").getAsBoolean() && message.equals(portalNotice(status)))
+            return Component.translatable(status.has("portalNeedsSlicing") && status.get("portalNeedsSlicing").getAsBoolean()
+                    ? "gui.prefablitematica.portal_slicing_short" : "gui.prefablitematica.portal_ignite_short").getString();
+        return message;
     }
     @Override public void extractBackground(GuiGraphicsExtractor g, int mouseX, int mouseY, float partialTick) {
         super.extractBackground(g, mouseX, mouseY, partialTick);
@@ -221,7 +236,9 @@ public final class BlueprintWorkbenchScreen extends AbstractContainerScreen<Blue
             g.text(font, String.format(java.util.Locale.ROOT, "%.1f%%", charge * 100), 118, 141, CHARGE_COLOR, false);
             g.text(font, (page + 1) + "/" + pages, 190, 224, TEXT_COLOR, false);
         } else { int y = 31; for (var line : font.split(Component.translatable("gui.prefablitematica.empty"), 114)) { g.text(font, line, 190, y, SECONDARY_COLOR, false); y += 11; } }
-        g.text(font, font.plainSubstrByWidth(message, 114), 190, 204, TEXT_COLOR, false);
+        var noticeLines = font.split(Component.literal(visibleMessage()), 114);
+        for (int line = 0; line < Math.min(2, noticeLines.size()); line++)
+            g.text(font, noticeLines.get(line), 190, 195 + line * 10, TEXT_COLOR, false);
     }
     @Override protected void extractTooltip(GuiGraphicsExtractor g, int mouseX, int mouseY) {
         super.extractTooltip(g, mouseX, mouseY);
@@ -239,7 +256,7 @@ public final class BlueprintWorkbenchScreen extends AbstractContainerScreen<Blue
                     tooltip.add(Component.translatable("conversion.prefablitematica." + hint.getAsString()));
                 g.setComponentTooltipForNextFrame(font, tooltip, mouseX, mouseY);
             }
-        } else if (x >= 184 && x < 312 && y >= 203 && y < 219 && !message.isEmpty()) g.setTooltipForNextFrame(font, Component.literal(message), mouseX, mouseY);
+        } else if (x >= 184 && x < 312 && y >= 194 && y < 216 && !message.isEmpty()) g.setTooltipForNextFrame(font, Component.literal(message), mouseX, mouseY);
     }
     @Override public boolean keyPressed(KeyEvent event) {
         if (catalogOpen && event.key() == com.mojang.blaze3d.platform.InputConstants.KEY_ESCAPE) { closeCatalog(); return true; }

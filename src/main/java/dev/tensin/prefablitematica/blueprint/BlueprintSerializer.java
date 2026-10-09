@@ -22,12 +22,14 @@ import java.util.zip.GZIPOutputStream;
 public final class BlueprintSerializer {
     public static final int MAGIC = 0x42505231;
     private static final int MAGIC_WITH_TICKS = 0x42505232;
+    private static final int MAGIC_WITH_PORTAL_HINT = 0x42505233;
+    private static final int MAGIC_WITH_PORTAL_WARNINGS = 0x42505234;
     public static final TagKey<Block> FORBIDDEN_BLOCKS = TagKey.create(Registries.BLOCK, Identifier.parse("prefablitematica:forbidden_blocks"));
     private BlueprintSerializer() {}
     public static byte[] encode(BlueprintData data) throws IOException {
         var bytes = new ByteArrayOutputStream();
         try (var out = new DataOutputStream(new GZIPOutputStream(bytes))) {
-            out.writeInt(MAGIC_WITH_TICKS); writeString(out, data.name);
+            out.writeInt(MAGIC_WITH_PORTAL_WARNINGS); writeString(out, data.name);
             out.writeInt(data.sizeX); out.writeInt(data.sizeY); out.writeInt(data.sizeZ);
             var palette = new LinkedHashMap<BlockState, Integer>();
             data.blocks.forEach(b -> palette.computeIfAbsent(b.state(), ignored -> palette.size()));
@@ -50,6 +52,8 @@ public final class BlueprintSerializer {
                 out.writeBoolean(tick.fluid()); writeString(out, tick.type().toString());
                 out.writeLong(tick.trigger()); out.writeInt(tick.priority()); out.writeLong(tick.order());
             }
+            out.writeBoolean(data.portalNeedsIgnition);
+            out.writeBoolean(data.portalNeedsSlicing);
         }
         return bytes.toByteArray();
     }
@@ -57,7 +61,8 @@ public final class BlueprintSerializer {
     public static BlueprintData decode(byte[] bytes, UUID id, BlueprintConfig config) throws IOException {
         byte[] expanded = BoundedStreams.expand(bytes, config.maxUploadBytes, config.maxExpandedBytes);
         try (var in = new DataInputStream(new ByteArrayInputStream(expanded))) {
-            int format = in.readInt(); require(format == MAGIC || format == MAGIC_WITH_TICKS, "Unsupported blueprint format");
+            int format = in.readInt(); require(format == MAGIC || format == MAGIC_WITH_TICKS || format == MAGIC_WITH_PORTAL_HINT
+                    || format == MAGIC_WITH_PORTAL_WARNINGS, "Unsupported blueprint format");
             String name = readString(in, 256).strip(); require(!name.isEmpty() && name.length() <= 80 && name.chars().noneMatch(c -> c < 32 || c == 127), "Invalid name");
             int x = in.readInt(), y = in.readInt(), z = in.readInt();
             require(x > 0 && y > 0 && z > 0 && x <= config.maxDimension && y <= config.maxDimension && z <= config.maxDimension, "Invalid dimensions");
@@ -96,7 +101,7 @@ public final class BlueprintSerializer {
                 blocks.add(new BlueprintBlock(pos, state, nbt));
             }
             var ticks = new ArrayList<BlueprintScheduledTick>();
-            if (format == MAGIC_WITH_TICKS) {
+            if (format != MAGIC) {
                 int tickCount = in.readInt(); require(tickCount >= 0 && tickCount <= count * 2L, "Invalid scheduled tick count");
                 var states = new HashMap<BlockPos, BlockState>(); if (tickCount > 0) blocks.forEach(b -> states.put(b.relativePos(), b.state()));
                 var tickPositions = new HashSet<String>();
@@ -111,8 +116,12 @@ public final class BlueprintSerializer {
                     ticks.add(new BlueprintScheduledTick(pos, fluidTick, type, trigger, priority, order));
                 }
             }
+            boolean portalNeedsIgnition = format == MAGIC_WITH_PORTAL_HINT || format == MAGIC_WITH_PORTAL_WARNINGS ? in.readBoolean() : false;
+            boolean portalNeedsSlicing = format == MAGIC_WITH_PORTAL_WARNINGS && in.readBoolean();
             require(in.available() == 0, "Trailing structure data");
             var data = new BlueprintData(id, name, x, y, z, blocks, ticks, new LinkedHashMap<>());
+            data.portalNeedsIgnition = portalNeedsIgnition;
+            data.portalNeedsSlicing = portalNeedsSlicing;
             data.requiresReimport = format == MAGIC && blocks.stream().anyMatch(b -> b.state().is(Blocks.COMPARATOR)
                     && (b.blockEntity() == null || !b.blockEntity().contains("OutputSignal")));
             return data;

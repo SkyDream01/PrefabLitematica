@@ -6,6 +6,9 @@ run/
 logs/
 src/main/generated/.cache/
 
+# Local video deliverables and source media
+/Video/
+
 # IDE and machine-specific configuration
 .idea/
 .vscode/

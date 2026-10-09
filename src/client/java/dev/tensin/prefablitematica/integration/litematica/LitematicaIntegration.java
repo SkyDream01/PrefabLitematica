@@ -6,9 +6,11 @@ package dev.tensin.prefablitematica.integration.litematica;
 import dev.tensin.prefablitematica.blueprint.*;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.ticks.ScheduledTick;
 import dev.tensin.prefablitematica.security.BlueprintNbtSanitizer;
 import java.lang.reflect.Method;
@@ -70,6 +72,7 @@ public final class LitematicaIntegration {
         private final List<Region> regions = new ArrayList<>();
         private final LinkedHashMap<BlockPos, BlueprintBlock> blocks = new LinkedHashMap<>();
         private final LinkedHashMap<String, BlueprintScheduledTick> ticks = new LinkedHashMap<>();
+        private final Map<BlockPos, Direction.Axis> portalAxes = new HashMap<>();
         private final String name;
         private final BlockPos minimum;
         private final int sizeX, sizeY, sizeZ;
@@ -135,16 +138,25 @@ public final class LitematicaIntegration {
                 if (!state.isAir() && state.getBlock() != Blocks.STRUCTURE_VOID) {
                     BlockPos pos = r.transform(r.minimum.offset(x, y, z)).subtract(minimum);
                     state = state.mirror(r.mainMirror).mirror(r.stateSubMirror).rotate(r.combined);
+                    boolean portal = state.is(Blocks.NETHER_PORTAL);
+                    if (portal) {
+                        Direction.Axis previousAxis = portalAxes.putIfAbsent(pos, state.getValue(BlockStateProperties.HORIZONTAL_AXIS));
+                        if (previousAxis != null && previousAxis != state.getValue(BlockStateProperties.HORIZONTAL_AXIS))
+                            throw new IllegalArgumentException("Conflicting overlapping subregions");
+                        state = Blocks.AIR.defaultBlockState();
+                    }
                     Object rawNbt = r.nbt.get(new BlockPos(x, y, z));
-                    CompoundTag nbt = rawNbt == null ? null : BlueprintNbtSanitizer.prepareForExport((CompoundTag) toVanilla.invoke(null, rawNbt), state);
+                    CompoundTag nbt = rawNbt == null || portal ? null : BlueprintNbtSanitizer.prepareForExport((CompoundTag) toVanilla.invoke(null, rawNbt), state);
                     BlueprintBlock block = new BlueprintBlock(pos, state, nbt);
                     BlueprintBlock previous = blocks.putIfAbsent(pos, block);
                     if (previous != null && !previous.equals(block)) throw new IllegalArgumentException("Conflicting overlapping subregions");
-                    var local = new BlockPos(x, y, z); var blockTick = r.blockTicks.get(local); var fluidTick = r.fluidTicks.get(local);
-                    if (blockTick != null && blockTick.type() == state.getBlock()) addTick(new BlueprintScheduledTick(pos, false,
-                            net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(blockTick.type()), blockTick.triggerTick(), blockTick.priority().getValue(), blockTick.subTickOrder()));
-                    if (fluidTick != null && fluidTick.type() == state.getFluidState().getType()) addTick(new BlueprintScheduledTick(pos, true,
-                            net.minecraft.core.registries.BuiltInRegistries.FLUID.getKey(fluidTick.type()), fluidTick.triggerTick(), fluidTick.priority().getValue(), fluidTick.subTickOrder()));
+                    if (!portal) {
+                        var local = new BlockPos(x, y, z); var blockTick = r.blockTicks.get(local); var fluidTick = r.fluidTicks.get(local);
+                        if (blockTick != null && blockTick.type() == state.getBlock()) addTick(new BlueprintScheduledTick(pos, false,
+                                net.minecraft.core.registries.BuiltInRegistries.BLOCK.getKey(blockTick.type()), blockTick.triggerTick(), blockTick.priority().getValue(), blockTick.subTickOrder()));
+                        if (fluidTick != null && fluidTick.type() == state.getFluidState().getType()) addTick(new BlueprintScheduledTick(pos, true,
+                                net.minecraft.core.registries.BuiltInRegistries.FLUID.getKey(fluidTick.type()), fluidTick.triggerTick(), fluidTick.priority().getValue(), fluidTick.subTickOrder()));
+                    }
                 }
                 if (++index >= r.x * r.y * r.z) { regionIndex++; index = 0; }
             }
@@ -152,7 +164,72 @@ public final class LitematicaIntegration {
         }
         public BlueprintData finish() {
             if (blocks.isEmpty()) throw new IllegalArgumentException("Projection is empty");
-            return new BlueprintData(UUID.randomUUID(), name, sizeX, sizeY, sizeZ, new ArrayList<>(blocks.values()), new ArrayList<>(ticks.values()), new LinkedHashMap<>());
+            boolean portalNeedsSlicing = validatePortalFrames();
+            var data = new BlueprintData(UUID.randomUUID(), name, sizeX, sizeY, sizeZ, new ArrayList<>(blocks.values()), new ArrayList<>(ticks.values()), new LinkedHashMap<>());
+            data.portalNeedsIgnition = !portalAxes.isEmpty();
+            data.portalNeedsSlicing = portalNeedsSlicing;
+            return data;
+        }
+        private boolean validatePortalFrames() {
+            if (portalAxes.isEmpty()) return false;
+            boolean unsupportedSlicing = false;
+            Map<BlockPos, BlockState> structure = new HashMap<>();
+            blocks.forEach((pos, block) -> structure.put(pos, block.state()));
+            Set<BlockPos> remaining = new HashSet<>(portalAxes.keySet());
+            while (!remaining.isEmpty()) {
+                BlockPos seed = remaining.iterator().next();
+                Direction.Axis axis = portalAxes.get(seed);
+                if (axis != Direction.Axis.X && axis != Direction.Axis.Z) {
+                    unsupportedSlicing = true; remaining.remove(seed); continue;
+                }
+                Direction horizontal = axis == Direction.Axis.X ? Direction.EAST : Direction.SOUTH;
+                List<Direction> plane = List.of(horizontal, horizontal.getOpposite(), Direction.UP, Direction.DOWN);
+                ArrayDeque<BlockPos> queue = new ArrayDeque<>(); Set<BlockPos> component = new HashSet<>();
+                remaining.remove(seed); queue.add(seed);
+                while (!queue.isEmpty()) {
+                    BlockPos pos = queue.removeFirst(); component.add(pos);
+                    for (Direction direction : plane) {
+                        BlockPos neighbor = pos.relative(direction);
+                        Direction.Axis neighborAxis = portalAxes.get(neighbor);
+                        if (neighborAxis == null) continue;
+                        if (neighborAxis != axis) { unsupportedSlicing = true; continue; }
+                        if (remaining.remove(neighbor)) queue.addLast(neighbor);
+                    }
+                }
+                int minHorizontal = Integer.MAX_VALUE, maxHorizontal = Integer.MIN_VALUE;
+                int minY = Integer.MAX_VALUE, maxY = Integer.MIN_VALUE;
+                int fixed = axis == Direction.Axis.X ? seed.getZ() : seed.getX();
+                for (BlockPos pos : component) {
+                    int horizontalPosition = axis == Direction.Axis.X ? pos.getX() : pos.getZ();
+                    int fixedPosition = axis == Direction.Axis.X ? pos.getZ() : pos.getX();
+                    if (fixedPosition != fixed) unsupportedSlicing = true;
+                    minHorizontal = Math.min(minHorizontal, horizontalPosition); maxHorizontal = Math.max(maxHorizontal, horizontalPosition);
+                    minY = Math.min(minY, pos.getY()); maxY = Math.max(maxY, pos.getY());
+                }
+                int width = maxHorizontal - minHorizontal + 1, height = maxY - minY + 1;
+                boolean validShape = width >= 2 && width <= 21 && height >= 3 && height <= 21 && (long) width * height == component.size();
+                for (int h = minHorizontal; h <= maxHorizontal; h++) for (int y = minY; y <= maxY; y++)
+                    if (!component.contains(portalPosition(axis, h, y, fixed))) validShape = false;
+                if (!validShape) { unsupportedSlicing = true; continue; }
+                boolean validFrame = true;
+                for (int h = minHorizontal; h <= maxHorizontal; h++) {
+                    if (!isObsidian(structure, portalPosition(axis, h, minY - 1, fixed))
+                            || !isObsidian(structure, portalPosition(axis, h, maxY + 1, fixed))) validFrame = false;
+                }
+                for (int y = minY; y <= maxY; y++) {
+                    if (!isObsidian(structure, portalPosition(axis, minHorizontal - 1, y, fixed))
+                            || !isObsidian(structure, portalPosition(axis, maxHorizontal + 1, y, fixed))) validFrame = false;
+                }
+                if (!validFrame) unsupportedSlicing = true;
+            }
+            return unsupportedSlicing;
+        }
+        private static BlockPos portalPosition(Direction.Axis axis, int horizontal, int y, int fixed) {
+            return axis == Direction.Axis.X ? new BlockPos(horizontal, y, fixed) : new BlockPos(fixed, y, horizontal);
+        }
+        private static boolean isObsidian(Map<BlockPos, BlockState> structure, BlockPos pos) {
+            BlockState state = structure.get(pos);
+            return state != null && state.is(Blocks.OBSIDIAN);
         }
         private void addTick(BlueprintScheduledTick tick) {
             var previous = ticks.putIfAbsent(tick.fluid() + ":" + tick.position().toShortString(), tick);

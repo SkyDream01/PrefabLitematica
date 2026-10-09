@@ -16,6 +16,8 @@ public final class BlueprintData {
     public boolean locked;
     public boolean retired;
     public boolean requiresReimport;
+    public boolean portalNeedsIgnition;
+    public boolean portalNeedsSlicing;
     public BlueprintData(UUID id, String name, int x, int y, int z, List<BlueprintBlock> blocks, LinkedHashMap<String, MaterialRequirement> requirements) {
         this(id, name, x, y, z, blocks, List.of(), requirements);
     }

@@ -3,6 +3,7 @@
 
 package dev.tensin.prefablitematica.material;
 
+import dev.tensin.prefablitematica.blueprint.BlueprintBlockPolicy;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.*;
@@ -30,6 +31,7 @@ public final class BlockMaterialResolver {
     }
     public Cost resolve(BlockState state, Map<BlockPos, BlockState> structure, BlockPos pos) {
         Block block = state.getBlock();
+        if (BlueprintBlockPolicy.isPreserved(state)) return new Cost(Items.AIR, 0);
         if (state.isAir() || block instanceof BaseFireBlock || block instanceof LiquidBlock || block instanceof BubbleColumnBlock)
             return new Cost(Items.AIR, 0); // Fluids are charged separately, including water inside bubble columns.
         if (state.is(Blocks.MOVING_PISTON))

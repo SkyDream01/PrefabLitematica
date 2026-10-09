@@ -4,6 +4,8 @@
 package dev.tensin.prefablitematica.placement;
 
 import dev.tensin.prefablitematica.PrefabLitematicaMod;
+import dev.tensin.prefablitematica.blueprint.BlueprintBlock;
+import dev.tensin.prefablitematica.blueprint.BlueprintBlockPolicy;
 import dev.tensin.prefablitematica.blueprint.BlueprintData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerPlayer;
@@ -16,6 +18,7 @@ public final class BlueprintPreviewScan {
     public final BlueprintRotation rotation;
     public final int width, depth, volume;
     private final BitSet conflicts = new BitSet();
+    private final Set<BlockPos> preservedPositions = new HashSet<>();
     private int index;
     private String firstProblem = "";
 
@@ -24,11 +27,16 @@ public final class BlueprintPreviewScan {
         width = rotation.ordinal() % 2 == 0 ? data.sizeX : data.sizeZ;
         depth = rotation.ordinal() % 2 == 0 ? data.sizeZ : data.sizeX;
         volume = width * data.sizeY * depth;
+        for (BlueprintBlock block : data.blocks) {
+            if (BlueprintBlockPolicy.isPreserved(block.state()))
+                preservedPositions.add(this.origin.offset(rotation.apply(block.relativePos(), data.sizeX, data.sizeZ)));
+        }
     }
     public boolean tick(int budget) {
         while (budget-- > 0 && index < volume) {
             int cell = index++;
             BlockPos pos = position(cell);
+            if (preservedPositions.contains(pos)) continue;
             String problem = PlacementValidator.problem(player, pos);
             if (problem == null && PrefabLitematicaMod.placements(player.level().getServer()).reserved(player.level(), pos)) problem = "Another placement reserves this area";
             if (problem != null) mark(cell, problem);

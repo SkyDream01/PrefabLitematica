@@ -125,7 +125,7 @@ class BlueprintCoreTest {
         byte[] expanded = BoundedStreams.expand(BlueprintSerializer.encode(source), 33554432, 100663296);
         java.nio.ByteBuffer.wrap(expanded).putInt(BlueprintSerializer.MAGIC);
         var legacyBytes = new ByteArrayOutputStream();
-        try (var gzip = new GZIPOutputStream(legacyBytes)) { gzip.write(expanded, 0, expanded.length - 4); }
+        try (var gzip = new GZIPOutputStream(legacyBytes)) { gzip.write(expanded, 0, expanded.length - 6); }
         var old = BlueprintSerializer.decode(legacyBytes.toByteArray(), source.id, new BlueprintConfig());
         assertTrue(old.requiresReimport);
         old.requirements.put("comparator", new MaterialRequirement("comparator", "minecraft:comparator", "exact", 1)); old.fill();
@@ -141,6 +141,24 @@ class BlueprintCoreTest {
         replacement.requiresReimport = false;
         replacement.requirements.get("comparator").required = 2;
         assertThrows(IllegalArgumentException.class, () -> BlueprintManager.refreshLegacy(old, replacement));
+    }
+    @Test void portalWarningsRoundtripAndAllEarlierFormatsRemainReadable() throws Exception {
+        var source = data(List.of(new BlueprintBlock(BlockPos.ZERO, Blocks.AIR.defaultBlockState(), null)), 1, 1, 1);
+        source.portalNeedsIgnition = true; source.portalNeedsSlicing = true;
+        var encoded = BlueprintSerializer.encode(source);
+        var decoded = BlueprintSerializer.decode(encoded, source.id, new BlueprintConfig());
+        assertTrue(decoded.portalNeedsIgnition); assertTrue(decoded.portalNeedsSlicing);
+        assertEquals(source.blocks, decoded.blocks);
+        byte[] expanded = BoundedStreams.expand(encoded, 33554432, 100663296);
+        for (int format = 1; format <= 3; format++) {
+            var historical = expanded.clone(); java.nio.ByteBuffer.wrap(historical).putInt(0x42505230 + format);
+            int removed = switch (format) { case 1 -> 6; case 2 -> 2; default -> 1; };
+            var bytes = new ByteArrayOutputStream();
+            try (var gzip = new GZIPOutputStream(bytes)) { gzip.write(historical, 0, historical.length - removed); }
+            var old = BlueprintSerializer.decode(bytes.toByteArray(), source.id, new BlueprintConfig());
+            assertEquals(source.blocks, old.blocks); assertEquals(format == 3, old.portalNeedsIgnition);
+            assertFalse(old.portalNeedsSlicing); assertFalse(old.requiresReimport);
+        }
     }
     @Test void cosmeticSignSurvivesButCommandsDoNot() throws Exception {
         var nbt=TagParser.parseCompoundFully("{front_text:{messages:[{text:'Hello',click_event:{action:'run_command',command:'/op test'}}]},Items:[]}");

@@ -39,6 +39,7 @@ public final class BlueprintProjectionRenderer {
             var ghosts = new ArrayList<AABB>(); var data = preview.data();
             if (!preview.litematicaVisible() && data != null) {
                 for (var block : data.blocks) {
+                    if (block.state().isAir()) continue;
                     var pos = origin.offset(preview.rotation().apply(block.relativePos(), data.sizeX, data.sizeZ));
                     if (Vec3.atCenterOf(pos).distanceToSqr(camera) > 128 * 128) continue;
                     var shape = block.state().rotate(preview.rotation().vanilla).getShape(EmptyBlockGetter.INSTANCE, pos);

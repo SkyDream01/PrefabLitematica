@@ -73,7 +73,7 @@ public final class PrefabLitematicaDataGenerator implements DataGeneratorEntrypo
             JsonObject tag = new JsonObject(); tag.addProperty("replace", false); JsonArray values = new JsonArray(); entry.getValue().forEach(values::add); tag.add("values",values);
             out.put("data/prefablitematica/tags/item/materials/" + entry.getKey().id() + ".json",tag);
         }
-        out.put("data/prefablitematica/tags/block/forbidden_blocks.json", json("{\"replace\":false,\"values\":[\"minecraft:command_block\",\"minecraft:chain_command_block\",\"minecraft:repeating_command_block\",\"minecraft:structure_block\",\"minecraft:jigsaw\",\"minecraft:spawner\",\"minecraft:trial_spawner\",\"minecraft:vault\",\"minecraft:bedrock\",\"minecraft:barrier\",\"minecraft:light\",\"minecraft:end_portal\",\"minecraft:end_gateway\",\"minecraft:nether_portal\",\"minecraft:moving_piston\",\"prefablitematica:workbench\"]}"));
+        out.put("data/prefablitematica/tags/block/forbidden_blocks.json", json("{\"replace\":false,\"values\":[\"minecraft:command_block\",\"minecraft:chain_command_block\",\"minecraft:repeating_command_block\",\"minecraft:structure_block\",\"minecraft:jigsaw\",\"minecraft:barrier\",\"minecraft:light\",\"minecraft:nether_portal\",\"minecraft:moving_piston\",\"prefablitematica:workbench\"]}"));
         out.put("data/prefablitematica/recipe/prefablitematica.json", json("{\"type\":\"minecraft:crafting_shapeless\",\"category\":\"misc\",\"ingredients\":[\"minecraft:book\",\"minecraft:lapis_lazuli\",\"minecraft:redstone\",\"minecraft:ink_sac\"],\"result\":{\"id\":\"prefablitematica:blank_blueprint\",\"count\":1}}"));
         out.put("data/prefablitematica/recipe/workbench.json", json("{\"type\":\"minecraft:crafting_shaped\",\"category\":\"misc\",\"pattern\":[\" B \",\"LIR\",\" O \"],\"key\":{\"B\":\"minecraft:book\",\"L\":\"minecraft:lapis_block\",\"I\":\"minecraft:ink_sac\",\"R\":\"minecraft:redstone_block\",\"O\":\"minecraft:obsidian\"},\"result\":{\"id\":\"prefablitematica:workbench\",\"count\":1}}"));
         out.put("data/prefablitematica/loot_table/blocks/workbench.json", json("{\"type\":\"minecraft:block\",\"pools\":[{\"rolls\":1,\"entries\":[{\"type\":\"minecraft:item\",\"name\":\"prefablitematica:workbench\"}],\"conditions\":[{\"condition\":\"minecraft:survives_explosion\"}]}]}"));
@@ -142,6 +142,10 @@ public final class PrefabLitematicaDataGenerator implements DataGeneratorEntrypo
                 {"gui.prefablitematica.choose_source","Choose a building","选择建筑"},{"gui.prefablitematica.scanning","Reading schematic list…","正在读取原理图列表…"},
                 {"gui.prefablitematica.no_sources","No matching buildings. Put schematics in Litematica's schematic folder.","没有找到建筑，请将原理图放入 Litematica 原理图目录。"},
                 {"gui.prefablitematica.need_blank","Insert a blank blueprint before importing.","请先放入空白蓝图。"},
+                {"gui.prefablitematica.portal_ignite","Nether portal blocks were cleared. Light the frame after placement.","地狱门已转为空气，放置后请手动点火。"},
+                {"gui.prefablitematica.portal_slicing","Portal slicing is unsupported; slice it manually and light it after placement.","检测到切门结构；本软件不支持切门，请在放置后自行切门并点火。"},
+                {"gui.prefablitematica.portal_ignite_short","Light portal manually\nafter placement.","地狱门已清空\n放置后手动点火"},
+                {"gui.prefablitematica.portal_slicing_short","Slicing unsupported.\nSlice & light manually.","本软件不支持切门\n放置后自行切门点火"},
                 {"gui.prefablitematica.compressing","Compressing building…","正在压缩建筑…"},{"gui.prefablitematica.uploading","Uploading building…","正在上传建筑…"},
                 {"gui.prefablitematica.validating","Server validation…","服务端正在验证…"},{"gui.prefablitematica.imported","Building loaded","建筑已载入"},
                 {"gui.prefablitematica.source.placement","Projection (enabled or disabled)","投影（已启用或未启用）"},

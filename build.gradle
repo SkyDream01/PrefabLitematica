@@ -61,11 +61,13 @@ loom.runs.configureEach { vmArg "-Dprefablitematica.projectDir=${project.project
 tasks.named('processGametestResources') {
     inputs.property 'projectionOnly', project.hasProperty('projectionOnly')
     inputs.property 'pistonOnly', project.hasProperty('pistonOnly')
+    inputs.property 'policyOnly', project.hasProperty('policyOnly')
     doLast {
-        if (project.hasProperty('projectionOnly') || project.hasProperty('pistonOnly')) {
+        if (project.hasProperty('projectionOnly') || project.hasProperty('pistonOnly') || project.hasProperty('policyOnly')) {
             def metadataFile = new File(destinationDir, 'fabric.mod.json')
             def metadata = new groovy.json.JsonSlurper().parse(metadataFile)
-            metadata.entrypoints['fabric-client-gametest'] = [project.hasProperty('pistonOnly')
+            metadata.entrypoints['fabric-client-gametest'] = [project.hasProperty('policyOnly')
+                    ? 'dev.tensin.prefablitematica.PortalPolicyClientGameTest' : project.hasProperty('pistonOnly')
                     ? 'dev.tensin.prefablitematica.PearlSchematicClientGameTest'
                     : 'dev.tensin.prefablitematica.ProjectionClientGameTest']
             metadataFile.text = groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(metadata))

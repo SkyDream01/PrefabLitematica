@@ -6,14 +6,15 @@
   "license": "AGPL-3.0-only",
   "environment": "*",
   "entrypoints": {
-    "fabric-gametest": ["dev.tensin.prefablitematica.BlueprintGameTests"],
+    "fabric-gametest": ["dev.tensin.prefablitematica.BlueprintGameTests", "dev.tensin.prefablitematica.BlueprintReleaseGameTests"],
     "fabric-client-gametest": [
       "dev.tensin.prefablitematica.PrefabLitematicaClientGameTest",
       "dev.tensin.prefablitematica.SwampSchematicClientGameTest",
       "dev.tensin.prefablitematica.PearlSchematicClientGameTest",
       "dev.tensin.prefablitematica.MaterialInputClientGameTest",
       "dev.tensin.prefablitematica.WorkbenchLayoutClientGameTest",
-      "dev.tensin.prefablitematica.ProjectionClientGameTest"
+      "dev.tensin.prefablitematica.ProjectionClientGameTest",
+      "dev.tensin.prefablitematica.PortalPolicyClientGameTest"
     ]
   },
   "depends": {"prefablitematica": "*"}

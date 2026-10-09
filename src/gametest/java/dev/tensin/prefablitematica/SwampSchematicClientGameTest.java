@@ -66,6 +66,30 @@ public final class SwampSchematicClientGameTest implements FabricClientGameTest 
                 var bench = (BlueprintWorkbenchBlockEntity) server.getPlayerList().getPlayers().getFirst().level().getBlockEntity(position);
                 return bench != null && bench.blueprint().fullyCharged();
             });
+            var origin = world.getServer().computeOnServer(server -> {
+                var player = server.getPlayerList().getPlayers().getFirst(); var data = ((BlueprintWorkbenchBlockEntity) player.level().getBlockEntity(position)).blueprint();
+                var target = new net.minecraft.core.BlockPos(player.blockPosition().getX() + 64, 120, player.blockPosition().getZ() + 64);
+                for (int x = target.getX() >> 4; x <= (target.getX() + data.sizeZ - 1) >> 4; x++)
+                    for (int z = target.getZ() >> 4; z <= (target.getZ() + data.sizeX - 1) >> 4; z++) player.level().getChunk(x, z);
+                var scan = new dev.tensin.prefablitematica.placement.BlueprintPreviewScan(player, data, target,
+                        dev.tensin.prefablitematica.placement.BlueprintRotation.CW_90); while (!scan.tick(4096)) {}
+                if (!scan.clear()) throw new AssertionError("Swamp paste preview failed: " + scan.firstProblem());
+                PrefabLitematicaMod.placements(server).start(player, dev.tensin.prefablitematica.item.BlueprintItem.loaded(data), target,
+                        dev.tensin.prefablitematica.placement.BlueprintRotation.CW_90); return target;
+            });
+            world.getServer().waitFor(server -> !((BlueprintWorkbenchBlockEntity) server.getPlayerList().getPlayers().getFirst().level().getBlockEntity(position)).blueprint().locked);
+            world.getServer().runOnServer(server -> {
+                var player = server.getPlayerList().getPlayers().getFirst(); var data = ((BlueprintWorkbenchBlockEntity) player.level().getBlockEntity(position)).blueprint();
+                var rotation = dev.tensin.prefablitematica.placement.BlueprintRotation.CW_90;
+                for (var block : data.blocks) {
+                    var target = origin.offset(rotation.apply(block.relativePos(), data.sizeX, data.sizeZ));
+                    if (player.level().getBlockState(target) != block.state().rotate(rotation.vanilla))
+                        throw new AssertionError("Swamp paste changed block at " + block.relativePos());
+                }
+                var restored = new dev.tensin.prefablitematica.blueprint.BlueprintManager(server).get(data.id);
+                if (restored == null || restored.fullyCharged() || !restored.blocks.equals(data.blocks)) throw new AssertionError("Swamp placement debit must persist");
+                PrefabLitematicaMod.LOGGER.info("Swamp paste matched all {} rotated block states", data.blocks.size());
+            });
         } catch (Exception e) { throw new RuntimeException(e); }
     }
 }

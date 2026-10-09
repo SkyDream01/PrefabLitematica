@@ -4,7 +4,7 @@
 
 # 使用指南
 
-适用于 PrefabLitematica 0.1.1。安装环境见[项目首页](../README.md)，材料计费规则见[材料规则](MATERIALS.md)。
+适用于 PrefabLitematica 0.1.2。安装环境见[项目首页](../README.md)，材料计费规则见[材料规则](MATERIALS.md)。
 
 ## 1. 制作蓝图与导入建筑
 

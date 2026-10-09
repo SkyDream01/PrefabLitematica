@@ -58,6 +58,149 @@ public final class BlueprintGameTests {
         for (int x = 0; x < count; x++) blocks.add(new BlueprintBlock(new BlockPos(x, 0, 0), Blocks.STONE.defaultBlockState(), null));
         return blocks;
     }
+    private static BlueprintData conversionBlueprint(GameTestHelper helper, BlockState... states) throws Exception {
+        var blocks = new ArrayList<BlueprintBlock>();
+        for (int i = 0; i < states.length; i++) blocks.add(new BlueprintBlock(new BlockPos(i, 0, 0), states[i], null));
+        return create(helper, blocks, states.length, 1, 1);
+    }
+    private static ItemStack wornTool(Item item, int remaining) {
+        var tool = new ItemStack(item); tool.setDamageValue(tool.getMaxDamage() - remaining); return tool;
+    }
+    @GameTest public void dirtConvertsGrassPathsAndFarmlandOnlyWithPaidTools(GameTestHelper helper) throws Exception {
+        var farm = Blocks.FARMLAND.defaultBlockState().setValue(BlockStateProperties.MOISTURE, 7);
+        var path = Blocks.DIRT_PATH.defaultBlockState();
+        var data = conversionBlueprint(helper, Blocks.GRASS_BLOCK.defaultBlockState(), path, path, farm, farm, farm);
+        var player = helper.makeMockServerPlayerInLevel(); var bench = workbench(helper); bench.setItem(0, BlueprintItem.loaded(data));
+        bench.setItem(8, new ItemStack(Items.DIRT, 8)); bench.setItem(1, new ItemStack(Items.IRON_PICKAXE)); bench.charge(player);
+        helper.assertTrue(data.requirements.get("item:minecraft:grass_block").supplied == 1 && bench.getItem(8).getCount() == 7,
+                "Only grass may use dirt without a suitable tool");
+        helper.assertTrue(bench.getItem(1).getDamageValue() == 0 && !data.fullyCharged(), "Wrong tools must stay untouched");
+        var shovel = new ItemStack(Items.IRON_SHOVEL); var hoe = new ItemStack(Items.IRON_HOE);
+        hoe.enchant(helper.getLevel().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT)
+                .getOrThrow(net.minecraft.world.item.enchantment.Enchantments.UNBREAKING), 3);
+        hoe.set(DataComponents.CUSTOM_NAME, Component.literal("Tiller"));
+        bench.setItem(1, shovel); bench.setItem(2, hoe); bench.charge(player);
+        helper.assertTrue(data.fullyCharged() && bench.getItem(8).getCount() == 2 && shovel.getDamageValue() == 2 && hoe.getDamageValue() == 3,
+                "Every path/field must pay a dirt and exactly one durability even with Unbreaking and a creative player");
+        bench.charge(player);
+        helper.assertTrue(shovel.getDamageValue() == 2 && hoe.getDamageValue() == 3, "A full blueprint must never spend durability again");
+        var saved = bench.saveCustomOnly(helper.getLevel().registryAccess()); bench.clearContent();
+        bench.loadCustomOnly(net.minecraft.world.level.storage.TagValueInput.create(net.minecraft.util.ProblemReporter.DISCARDING, helper.getLevel().registryAccess(), saved));
+        helper.assertTrue(bench.getItem(1).getDamageValue() == 2 && bench.getItem(2).getDamageValue() == 3
+                && bench.getItem(2).getHoverName().getString().equals("Tiller") && bench.getItem(8).getCount() == 2,
+                "Paid durability, names and surplus must persist");
+        var restored = new BlueprintManager(helper.getLevel().getServer()).get(data.id);
+        helper.assertTrue(restored != null && restored.fullyCharged() && restored.blocks.get(3).state() == farm,
+                "Converted materials must preserve the original moisture and persisted progress");
+        helper.succeed();
+    }
+    @GameTest public void finishedMaterialsWinBeforePumpkinCarving(GameTestHelper helper) throws Exception {
+        var carved = Blocks.CARVED_PUMPKIN.defaultBlockState().setValue(BlockStateProperties.HORIZONTAL_FACING, Direction.WEST);
+        var data = conversionBlueprint(helper, carved, carved, carved, Blocks.FARMLAND.defaultBlockState());
+        var player = helper.makeMockServerPlayerInLevel(); var bench = workbench(helper); bench.setItem(0, BlueprintItem.loaded(data));
+        var shears = new ItemStack(Items.SHEARS); var hoe = new ItemStack(Items.IRON_HOE);
+        bench.setItem(1, new ItemStack(Items.PUMPKIN, 3)); bench.setItem(2, shears); bench.setItem(3, new ItemStack(Items.DIRT));
+        bench.setItem(4, hoe); bench.setItem(8, new ItemStack(Items.CARVED_PUMPKIN)); bench.setItem(9, new ItemStack(Items.FARMLAND)); bench.charge(player);
+        helper.assertTrue(data.fullyCharged() && shears.getDamageValue() == 2 && bench.getItem(1).getCount() == 1,
+                "Finished carved pumpkins must be charged before consuming two raw pumpkins");
+        helper.assertTrue(hoe.getDamageValue() == 0 && bench.getItem(3).getCount() == 1 && bench.getItem(8).isEmpty() && bench.getItem(9).isEmpty(),
+                "Finished farmland must not spend dirt or hoe durability");
+        helper.assertTrue(data.blocks.getFirst().state() == carved, "Carving must retain blueprint facing"); helper.succeed();
+    }
+    @GameTest public void toolBreakageAllowsPartialChargingAndMultipleTools(GameTestHelper helper) throws Exception {
+        var carved = Blocks.CARVED_PUMPKIN.defaultBlockState();
+        var data = conversionBlueprint(helper, carved, carved, carved, carved, carved);
+        var player = helper.makeMockServerPlayerInLevel(); var bench = workbench(helper); bench.setItem(0, BlueprintItem.loaded(data));
+        bench.setItem(1, new ItemStack(Items.PUMPKIN, 6)); bench.setItem(2, wornTool(Items.SHEARS, 1)); bench.setItem(3, wornTool(Items.SHEARS, 1));
+        bench.charge(player);
+        helper.assertTrue(data.requirements.get("item:minecraft:carved_pumpkin").supplied == 2 && bench.getItem(1).getCount() == 4
+                && bench.getItem(2).isEmpty() && bench.getItem(3).isEmpty(), "Both tools may break, paying only two conversions");
+        bench.charge(player);
+        helper.assertTrue(bench.getItem(1).getCount() == 4 && data.charge() == .4, "No durability must leave the remaining raw material intact");
+        var replacement = new ItemStack(Items.SHEARS); bench.setItem(3, replacement); bench.charge(player);
+        helper.assertTrue(data.fullyCharged() && replacement.getDamageValue() == 3 && bench.getItem(1).getCount() == 1,
+                "A replacement must complete the three unpaid conversions without double charging"); helper.succeed();
+    }
+    @GameTest public void multiStepTillingPoolsDurabilityWithoutEatingUnpaidDirt(GameTestHelper helper) throws Exception {
+        var data = conversionBlueprint(helper, Blocks.FARMLAND.defaultBlockState());
+        var player = helper.makeMockServerPlayerInLevel(); var bench = workbench(helper); bench.setItem(0, BlueprintItem.loaded(data));
+        bench.setItem(1, new ItemStack(Items.COARSE_DIRT, 2)); var hoe = wornTool(Items.IRON_HOE, 1); bench.setItem(2, hoe); bench.charge(player);
+        helper.assertTrue(data.charge() == 0 && bench.getItem(1).getCount() == 2 && MaterialConversionRegistry.capacity(hoe, MaterialConversionRegistry.Tool.HOE, 1) == 1,
+                "A two-use conversion must reserve both uses before spending anything");
+        bench.setItem(3, wornTool(Items.WOODEN_HOE, 1)); bench.charge(player);
+        helper.assertTrue(data.fullyCharged() && bench.getItem(1).getCount() == 1 && bench.getItem(2).isEmpty() && bench.getItem(3).isEmpty(),
+                "Two different hoes can pay one till each for coarse dirt to farmland"); helper.succeed();
+    }
+    @GameTest public void conversionsShareLooseAndBoxedToolsWithoutMutatingOriginalContents(GameTestHelper helper) throws Exception {
+        var carved = Blocks.CARVED_PUMPKIN.defaultBlockState();
+        var data = conversionBlueprint(helper, carved, carved, carved, carved);
+        var player = helper.makeMockServerPlayerInLevel(); var bench = workbench(helper); bench.setItem(0, BlueprintItem.loaded(data));
+        var materials = shulker(item("red_shulker_box"), new ItemStack(Items.PUMPKIN, 4), new ItemStack(Items.DIAMOND, 2));
+        bench.setItem(1, materials.copy()); bench.charge(player);
+        helper.assertTrue(ItemStack.matches(materials, bench.getItem(1)) && bench.getItem(11).isEmpty(), "A boxed source without a tool must stay in the input unchanged");
+        var shears = new ItemStack(Items.SHEARS); shears.set(DataComponents.CUSTOM_NAME, Component.literal("Boxed carver"));
+        var tools = shulker(item("blue_shulker_box"), shears); bench.setItem(2, tools.copy()); bench.setItem(9, new ItemStack(Items.CARVED_PUMPKIN)); bench.charge(player);
+        helper.assertTrue(data.fullyCharged() && bench.getItem(1).isEmpty() && bench.getItem(2).isEmpty(), "Loose finished materials and tools in another box must work together");
+        var left = bench.getItem(11).get(DataComponents.CONTAINER).itemCopies().toList();
+        var returnedTool = bench.getItem(12).get(DataComponents.CONTAINER).itemCopies().toList().getFirst();
+        helper.assertTrue(bench.getItem(11).is(item("red_shulker_box")) && left.get(0).getCount() == 1 && left.get(1).getCount() == 2,
+                "Unused and unrelated boxed materials must retain their slots");
+        helper.assertTrue(bench.getItem(12).is(item("blue_shulker_box")) && returnedTool.getDamageValue() == 3
+                && returnedTool.getHoverName().getString().equals("Boxed carver"), "A box used only for its tool must return with updated durability and name");
+        helper.assertTrue(materials.get(DataComponents.CONTAINER).itemCopies().toList().getFirst().getCount() == 4
+                && tools.get(DataComponents.CONTAINER).itemCopies().toList().getFirst().getDamageValue() == 0, "Original components must never be mutated");
+        helper.succeed();
+    }
+    @GameTest public void axesStripWoodAndPayEveryCopperScrapeAndWaxRemoval(GameTestHelper helper) throws Exception {
+        var bulb = ((BlockItem) item("copper_bulb")).getBlock().defaultBlockState();
+        var data = conversionBlueprint(helper, Blocks.STRIPPED_OAK_LOG.defaultBlockState(), Blocks.STRIPPED_BAMBOO_BLOCK.defaultBlockState(),
+                Blocks.STRIPPED_OAK_WOOD.defaultBlockState(), bulb);
+        var player = helper.makeMockServerPlayerInLevel(); var bench = workbench(helper); bench.setItem(0, BlueprintItem.loaded(data));
+        bench.setItem(1, new ItemStack(Items.OAK_LOG)); bench.setItem(2, new ItemStack(Items.BAMBOO_BLOCK)); bench.setItem(3, new ItemStack(Items.OAK_WOOD));
+        bench.setItem(4, new ItemStack(item("waxed_oxidized_copper_bulb"))); var axe = new ItemStack(Items.IRON_AXE); bench.setItem(9, axe); bench.charge(player);
+        helper.assertTrue(data.fullyCharged() && axe.getDamageValue() == 7, "Three strips plus wax removal and three oxidation stages must cost seven durability");
+        for (int slot = 1; slot <= 4; slot++) helper.assertTrue(bench.getItem(slot).isEmpty(), "Every converted raw material must be consumed exactly once");
+        helper.assertTrue(data.blocks.get(3).state() == bulb, "Copper conversion must preserve the requested bulb state"); helper.succeed();
+    }
+    @GameTest public void strictConversionsRejectWrongSpeciesAndWoodShape(GameTestHelper helper) throws Exception {
+        var data = conversionBlueprint(helper, Blocks.STRIPPED_OAK_WOOD.defaultBlockState());
+        data.requirements.clear(); data.requirements.put("item:minecraft:stripped_oak_wood",
+                new MaterialRequirement("item:minecraft:stripped_oak_wood", "minecraft:stripped_oak_wood", "exact", 1));
+        PrefabLitematicaMod.manager(helper.getLevel().getServer()).saveProgress(data);
+        var player = helper.makeMockServerPlayerInLevel(); var bench = workbench(helper); bench.setItem(0, BlueprintItem.loaded(data));
+        var axe = new ItemStack(Items.IRON_AXE); bench.setItem(1, axe);
+        bench.setItem(2, new ItemStack(Items.SPRUCE_WOOD)); bench.setItem(3, new ItemStack(Items.OAK_LOG)); bench.charge(player);
+        helper.assertTrue(data.charge() == 0 && axe.getDamageValue() == 0 && bench.getItem(2).getCount() == 1 && bench.getItem(3).getCount() == 1,
+                "Exact oak wood needs the correct species and full-bark shape before spending material or axe durability");
+        bench.setItem(4, new ItemStack(Items.OAK_WOOD)); bench.charge(player);
+        helper.assertTrue(data.fullyCharged() && axe.getDamageValue() == 1 && bench.getItem(4).isEmpty()
+                && bench.getItem(2).getCount() == 1 && bench.getItem(3).getCount() == 1, "Only the matching raw wood may be converted"); helper.succeed();
+    }
+    @GameTest public void powderSnowBucketsChargeReturnPersistAndPlaceExactStates(GameTestHelper helper) throws Exception {
+        var snow = Blocks.POWDER_SNOW.defaultBlockState();
+        var cauldron = Blocks.POWDER_SNOW_CAULDRON.defaultBlockState().setValue(BlockStateProperties.LEVEL_CAULDRON, 2);
+        var data = conversionBlueprint(helper, snow, snow, cauldron);
+        helper.assertTrue(data.requirements.get("item:minecraft:powder_snow_bucket").required == 3
+                && data.requirements.get("item:minecraft:cauldron").required == 1 && !data.requirements.containsKey("item:minecraft:water_bucket"),
+                "Two snow blocks and a snow cauldron require three powder snow buckets and one cauldron");
+        var player = helper.makeMockServerPlayerInLevel(); var bench = workbench(helper); var blueprint = BlueprintItem.loaded(data); bench.setItem(0, blueprint);
+        bench.setItem(1, new ItemStack(Items.WATER_BUCKET, 2)); bench.charge(player);
+        helper.assertTrue(data.charge() == 0 && bench.getItem(1).getCount() == 2, "Water buckets must not pay for powder snow");
+        bench.setItem(1, new ItemStack(Items.POWDER_SNOW_BUCKET));
+        bench.setItem(2, shulker(Items.SHULKER_BOX, new ItemStack(Items.POWDER_SNOW_BUCKET), new ItemStack(Items.POWDER_SNOW_BUCKET), new ItemStack(Items.CAULDRON)));
+        bench.charge(player);
+        helper.assertTrue(data.fullyCharged() && bench.getItem(11).is(Items.BUCKET) && bench.getItem(11).getCount() == 3
+                && bench.getItem(12).is(Items.SHULKER_BOX), "Loose and boxed powder snow must return three buckets and the empty box");
+        var restored = new BlueprintManager(helper.getLevel().getServer()).get(data.id);
+        helper.assertTrue(restored != null && restored.fullyCharged() && restored.blocks.get(2).state() == cauldron,
+                "Snow charging and cauldron fill level must persist");
+        var origin = helper.absolutePos(new BlockPos(3, 3, 3));
+        for (int i = 0; i < 3; i++) helper.getLevel().setBlockAndUpdate(origin.east(i), Blocks.AIR.defaultBlockState());
+        var placements = PrefabLitematicaMod.placements(helper.getLevel().getServer()); placements.start(player, blueprint, origin, BlueprintRotation.NONE); placements.tick();
+        helper.assertTrue(helper.getLevel().getBlockState(origin) == snow && helper.getLevel().getBlockState(origin.east()) == snow
+                && helper.getLevel().getBlockState(origin.east(2)) == cauldron, "Placement must keep snow and the original cauldron level");
+        helper.assertTrue(!data.fullyCharged() && !data.locked, "Snow placement must debit charge exactly once"); helper.succeed();
+    }
     @GameTest public void repeatedMaterialInputsMergeTo4096AndPersist(GameTestHelper helper) {
         var player = helper.makeMockServerPlayerInLevel(); var bench = workbench(helper);
         var menu = new BlueprintWorkbenchScreenHandler(1, player.getInventory(), bench);

@@ -232,9 +232,12 @@ public final class BlueprintWorkbenchScreen extends AbstractContainerScreen<Blue
             if (rowIndex < rows.size()) {
                 var row = rows.get(rowIndex).getAsJsonObject(); var id = Identifier.tryParse(row.get("item").getAsString());
                 var label = id == null ? Component.literal("?") : new net.minecraft.world.item.ItemStack(BuiltInRegistries.ITEM.getValue(id)).getHoverName();
-                g.setComponentTooltipForNextFrame(font, java.util.List.of(label, Component.translatable("material.prefablitematica." + row.get("group").getAsString()),
+                var tooltip = new ArrayList<Component>(List.of(label, Component.translatable("material.prefablitematica." + row.get("group").getAsString()),
                         Component.literal(row.get("supplied").getAsInt() + "/" + row.get("required").getAsInt()),
-                        Component.literal(Component.translatable("gui.prefablitematica.remaining").getString() + ": " + row.get("remaining").getAsInt())), mouseX, mouseY);
+                        Component.literal(Component.translatable("gui.prefablitematica.remaining").getString() + ": " + row.get("remaining").getAsInt())));
+                if (row.has("conversions")) for (var hint : row.getAsJsonArray("conversions"))
+                    tooltip.add(Component.translatable("conversion.prefablitematica." + hint.getAsString()));
+                g.setComponentTooltipForNextFrame(font, tooltip, mouseX, mouseY);
             }
         } else if (x >= 184 && x < 312 && y >= 203 && y < 219 && !message.isEmpty()) g.setTooltipForNextFrame(font, Component.literal(message), mouseX, mouseY);
     }

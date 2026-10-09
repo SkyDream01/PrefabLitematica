@@ -7,7 +7,7 @@
 | 标识 | 值 |
 | --- | --- |
 | 显示名称 / Gradle 项目名 | PrefabLitematica |
-| 版本 | 0.1.1 |
+| 版本 | 0.1.2 |
 | 项目原创代码许可证 | `AGPL-3.0-only` |
 | Fabric Mod ID / 资源与网络命名空间 | `prefablitematica` |
 | Java 包 / Maven group | `dev.tensin.prefablitematica` |
@@ -76,9 +76,9 @@ docs/                         使用、配置、架构、验证及截图
 
 产物：
 
-- `build/libs/prefablitematica-fabric-26.3-0.1.1.jar`
-- `build/libs/prefablitematica-fabric-26.3-0.1.1-sources.jar`
-- `build/distributions/prefablitematica-fabric-26.3-0.1.1-source.zip`
+- `build/libs/prefablitematica-fabric-26.3-0.1.2.jar`
+- `build/libs/prefablitematica-fabric-26.3-0.1.2-sources.jar`
+- `build/distributions/prefablitematica-fabric-26.3-0.1.2-source.zip`
 
 版本只在 `gradle.properties` 的 `version` 更新，主模组和测试模组元数据由资源处理任务展开；Minecraft 版本由 `minecraft_version` 控制产物前缀。
 

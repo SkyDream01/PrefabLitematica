@@ -23,6 +23,34 @@ class MaterialResolverTest {
     @BeforeAll static void bootstrap() { SharedConstants.tryDetectVersion(); Bootstrap.bootStrap(); }
     private final BlockMaterialResolver resolver = new BlockMaterialResolver();
 
+    @Test void powderSnowAndCauldronChargeSeparateBucketsForEveryFillLevel() {
+        assertEquals(new BlockMaterialResolver.Cost(Items.POWDER_SNOW_BUCKET, 1),
+                resolver.resolve(Blocks.POWDER_SNOW.defaultBlockState(), Map.of(), BlockPos.ZERO));
+        for (var state : Blocks.POWDER_SNOW_CAULDRON.getStateDefinition().getPossibleStates()) {
+            assertEquals(List.of(new BlockMaterialResolver.Cost(Items.CAULDRON, 1),
+                    new BlockMaterialResolver.Cost(Items.POWDER_SNOW_BUCKET, 1)), resolver.resolveAll(state, Map.of(), BlockPos.ZERO));
+            var fluids = new FluidMaterialResolver(); fluids.accept(state);
+            var requirements = new LinkedHashMap<String, MaterialRequirement>(); fluids.finish(requirements);
+            assertTrue(requirements.isEmpty(), "Powder snow must not add water bucket charges");
+        }
+    }
+
+    @Test void conversionsChargeEveryUseAndNeverMixWoodShapes() {
+        var rules = MaterialConversionRegistry.recipes();
+        assertTrue(rules.contains(new MaterialConversionRegistry.Recipe(Items.DIRT, Items.GRASS_BLOCK,
+                MaterialConversionRegistry.Tool.NONE, 0, "grass")));
+        assertTrue(rules.contains(new MaterialConversionRegistry.Recipe(Items.PUMPKIN, Items.CARVED_PUMPKIN,
+                MaterialConversionRegistry.Tool.SHEARS, 1, "carve")));
+        assertTrue(rules.contains(new MaterialConversionRegistry.Recipe(Items.COARSE_DIRT, Items.FARMLAND,
+                MaterialConversionRegistry.Tool.HOE, 2, "farmland_twice")));
+        assertTrue(rules.stream().anyMatch(r -> r.source() == Items.OAK_LOG && r.target() == Items.STRIPPED_OAK_LOG && r.durability() == 1));
+        assertTrue(rules.stream().anyMatch(r -> r.source() == Items.OAK_WOOD && r.target() == Items.STRIPPED_OAK_WOOD && r.durability() == 1));
+        assertFalse(rules.stream().anyMatch(r -> r.source() == Items.OAK_LOG && r.target() == Items.STRIPPED_OAK_WOOD));
+        var source = BuiltInRegistries.ITEM.getValue(net.minecraft.resources.Identifier.withDefaultNamespace("waxed_oxidized_copper_bulb"));
+        var target = BuiltInRegistries.ITEM.getValue(net.minecraft.resources.Identifier.withDefaultNamespace("copper_bulb"));
+        assertTrue(rules.stream().anyMatch(r -> r.source() == source && r.target() == target && r.durability() == 4));
+    }
+
     @Test void bubbleColumnsChargeWaterOnceWithoutAnExtraBlockItem() {
         var fluids = new FluidMaterialResolver();
         for (boolean drag : new boolean[]{false, true}) {

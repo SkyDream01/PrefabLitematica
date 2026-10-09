@@ -7,6 +7,7 @@ import com.google.gson.*;
 import dev.tensin.prefablitematica.PrefabLitematicaMod;
 import dev.tensin.prefablitematica.blueprint.*;
 import dev.tensin.prefablitematica.item.BlueprintItem;
+import dev.tensin.prefablitematica.material.MaterialConversionRegistry;
 import dev.tensin.prefablitematica.screen.BlueprintWorkbenchScreenHandler;
 import net.fabricmc.fabric.api.networking.v1.*;
 import net.minecraft.server.MinecraftServer;
@@ -146,6 +147,9 @@ public final class BlueprintNetworking {
             result.addProperty("page", menu.page); result.addProperty("pages", pages); JsonArray materials = new JsonArray();
             for (int i = menu.page * PAGE_SIZE; i < Math.min(rows.size(), menu.page * PAGE_SIZE + PAGE_SIZE); i++) {
                 var r = rows.get(i); JsonObject row = new JsonObject(); row.addProperty("item", r.representativeItem); row.addProperty("group", r.group);
+                JsonArray conversions = new JsonArray();
+                MaterialConversionRegistry.hints(r, PrefabLitematicaMod.manager(player.level().getServer()).equivalence).forEach(conversions::add);
+                row.add("conversions", conversions);
                 row.addProperty("required", r.required); row.addProperty("supplied", r.supplied); row.addProperty("remaining", r.remaining()); materials.add(row);
             }
             result.add("materials", materials);

@@ -6,6 +6,7 @@ package dev.tensin.prefablitematica.block.entity;
 import dev.tensin.prefablitematica.PrefabLitematicaMod;
 import dev.tensin.prefablitematica.blueprint.BlueprintData;
 import dev.tensin.prefablitematica.item.BlueprintItem;
+import dev.tensin.prefablitematica.material.MaterialConversionRegistry;
 import dev.tensin.prefablitematica.screen.BlueprintWorkbenchScreenHandler;
 import net.minecraft.core.*;
 import net.minecraft.core.component.DataComponents;
@@ -22,6 +23,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.storage.*;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.List;
 
 public final class BlueprintWorkbenchBlockEntity extends BlockEntity implements Container, MenuProvider {
     // Keep old persisted indices; slot 10 is migration storage only, never a new input slot.
@@ -43,25 +45,34 @@ public final class BlueprintWorkbenchBlockEntity extends BlockEntity implements 
         if (batterySlot >= 0) {
             getItem(batterySlot).shrink(1); data.fill(); changed = true;
         } else {
+            var inputs = new ArrayList<ItemStack>();
+            record BoxInput(ItemStack stack, List<ItemStack> contents, List<ItemStack> before) {}
+            var boxes = new ArrayList<BoxInput>();
             for (int slot = MATERIAL_START; slot < MATERIAL_END; slot++) {
                 ItemStack stack = getItem(slot); if (stack.isEmpty()) continue;
                 if (isShulkerBox(stack)) {
                     var contents = new ArrayList<>(stack.getOrDefault(DataComponents.CONTAINER, ItemContainerContents.EMPTY).itemCopies().toList());
                     if (contents.stream().anyMatch(item -> !item.isEmpty())) {
-                        boolean used = false;
-                        for (ItemStack contained : contents) {
-                            // Do not consume another container's contents as a shell material.
-                            if (!isShulkerBox(contained)) used |= consumeMaterial(data, contained, player);
-                        }
-                        if (used) {
-                            ItemStack returned = stack.split(1);
-                            returned.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(contents));
-                            returnContainer(player, returned); changed = true;
-                        }
+                        boxes.add(new BoxInput(stack, contents, contents.stream().map(ItemStack::copy).toList()));
+                        // Do not consume another container's contents as a shell material.
+                        contents.stream().filter(item -> !isShulkerBox(item)).forEach(inputs::add);
                         continue;
                     }
                 }
-                changed |= consumeMaterial(data, stack, player);
+                inputs.add(stack);
+            }
+            // Finished materials get priority and never spend tool durability.
+            for (ItemStack stack : inputs) changed |= consumeMaterial(data, stack, player);
+            changed |= convertMaterials(data, inputs, player);
+            for (var box : boxes) {
+                boolean used = false;
+                for (int i = 0; i < box.contents().size(); i++)
+                    used |= !ItemStack.matches(box.contents().get(i), box.before().get(i));
+                if (used) {
+                    ItemStack returned = box.stack().split(1);
+                    returned.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(box.contents()));
+                    returnContainer(player, returned);
+                }
             }
         }
         if (!changed) return;
@@ -86,6 +97,39 @@ public final class BlueprintWorkbenchBlockEntity extends BlockEntity implements 
                 if (bucket) returnContainer(player, new ItemStack(Items.BUCKET, accepted));
             }
             if (stack.isEmpty()) break;
+        }
+        return changed;
+    }
+    private boolean convertMaterials(BlueprintData data, List<ItemStack> inputs, ServerPlayer player) {
+        boolean changed = false;
+        var equivalence = PrefabLitematicaMod.manager(player.level().getServer()).equivalence;
+        for (var requirement : data.requirements.values()) {
+            if (requirement.remaining() == 0) continue;
+            for (var recipe : MaterialConversionRegistry.recipes()) {
+                if (!equivalence.accepts(requirement, new ItemStack(recipe.target()))) continue;
+                for (ItemStack source : inputs) {
+                    if (source.isEmpty() || !source.is(recipe.source()) || requirement.remaining() == 0) continue;
+                    if (recipe.tool() == MaterialConversionRegistry.Tool.NONE) {
+                        int accepted = requirement.offer(source.getCount());
+                        source.shrink(accepted); changed |= accepted > 0;
+                    } else {
+                        long uses = inputs.stream().mapToLong(tool -> MaterialConversionRegistry.capacity(tool, recipe.tool(), 1)).sum();
+                        int count = (int) Math.min(source.getCount(), uses / recipe.durability());
+                        int accepted = requirement.offer(count);
+                        if (accepted > 0) {
+                            source.shrink(accepted);
+                            int damage = accepted * recipe.durability();
+                            for (ItemStack tool : inputs) {
+                                int spent = Math.min(damage, MaterialConversionRegistry.capacity(tool, recipe.tool(), 1));
+                                if (spent > 0) MaterialConversionRegistry.damage(tool, spent);
+                                damage -= spent;
+                                if (damage == 0) break;
+                            }
+                            changed = true;
+                        }
+                    }
+                }
+            }
         }
         return changed;
     }

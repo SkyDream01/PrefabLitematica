@@ -160,6 +160,19 @@ public final class PrefabLitematicaDataGenerator implements DataGeneratorEntrypo
             result.addProperty("material.prefablitematica." + group.id(), label); result.addProperty("tag.item.prefablitematica.materials." + group.id(), label);
         }
         result.addProperty("material.prefablitematica.exact", zh ? "相同物品" : "Exact item"); result.addProperty("material.prefablitematica.water",zh ? "水：固定两个水桶" : "Water: two buckets total"); result.addProperty("material.prefablitematica.lava",zh ? "岩浆：每源方块一个桶" : "Lava: one bucket per source");
+        String[][] conversions = {
+                {"grass", "Also accepts dirt; no tool needed.", "也可提交泥土，无需工具。"},
+                {"path", "Also accepts dirt-like blocks + shovel (1 durability each).", "也可提交泥土类方块 + 铲子，每次扣 1 耐久。"},
+                {"farmland", "Also accepts dirt, grass or dirt path + hoe (1 durability each).", "也可提交泥土、草方块或土径 + 锄头，每次扣 1 耐久。"},
+                {"till_dirt", "Also accepts coarse/rooted dirt + hoe (1 durability each).", "也可提交砂土或缠根泥土 + 锄头，每次扣 1 耐久。"},
+                {"farmland_twice", "Coarse/rooted dirt + hoe needs 2 uses (2 durability each).", "砂土或缠根泥土 + 锄头需转换两次，共扣 2 耐久。"},
+                {"carve", "Also accepts pumpkin + shears (1 durability each).", "也可提交南瓜 + 剪刀，每次扣 1 耐久。"},
+                {"strip", "Also accepts matching unstripped logs/wood + axe (1 durability each).", "也可提交对应未去皮原木或木 + 斧头，每次扣 1 耐久。"},
+                {"scrape", "Also accepts oxidized copper + axe (1 durability per oxidation stage).", "也可提交氧化铜材料 + 斧头，每去除一级氧化扣 1 耐久。"},
+                {"wax_off", "Also accepts matching waxed copper + axe (1 durability each).", "也可提交对应涂蜡铜材料 + 斧头，每次除蜡扣 1 耐久。"},
+                {"wax_scrape", "Waxed oxidized copper + axe: 1 durability for wax plus 1 per oxidation stage.", "涂蜡氧化铜材料 + 斧头：除蜡扣 1，每去除一级氧化再扣 1 耐久。"}
+        };
+        for (String[] row : conversions) result.addProperty("conversion.prefablitematica." + row[0], row[zh ? 2 : 1]);
         return result;
     }
 }
